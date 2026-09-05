@@ -26,11 +26,20 @@ Welcome to the `openproject-mcp` project. This document defines operating princi
 ## 3. Technology Stack & Coding Standards
 
 ### Stack
-- **Language**: TypeScript (targeting ES2022 / Node.js >= 18).
+- **Runtime & Package Manager**: **Bun** (>= 1.2 / 1.3).
+  - Default to using Bun instead of Node.js.
+  - Use `bun <file>` instead of `node <file>` or `ts-node <file>`.
+  - Use `bun test` instead of `jest` or `vitest` (using `import { test, expect, describe } from "bun:test"`).
+  - Use `bun add` / `bun install` instead of `npm install`, `pnpm`, or `yarn`.
+  - Use `bun run <script>` instead of `npm run <script>`.
+  - Use `bunx <package>` instead of `npx <package>`.
+  - Bun automatically loads `.env` and `.env.local`, so do not introduce external packages like `dotenv`.
+  - Prefer `Bun.file` over `node:fs` for reading and writing files.
+- **Language**: TypeScript (running natively on Bun with ESNext target, `bundler` module resolution, strict mode).
 - **MCP Framework**: Official `@modelcontextprotocol/sdk`.
 - **Validation**: `zod` for input schema validation and TypeScript inference.
-- **HTTP Client**: Native `fetch` or a minimal strongly-typed wrapper (e.g., `undici` or `axios` if required for streaming/interceptors).
-- **Testing**: Vitest or Jest with fixture-based mocking for HAL+JSON API responses.
+- **HTTP Client**: Native `fetch` (high-performance built-in implementation in Bun).
+- **Testing**: `bun:test` with fixture-based mocking for HAL+JSON API responses.
 
 ### Code Style
 - **TypeScript**: Strict type checking enabled (`strict: true` in `tsconfig.json`). Avoid `any` - use `unknown` with type guards or explicit Zod schemas.

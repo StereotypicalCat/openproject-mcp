@@ -47,6 +47,7 @@ flowchart LR
 The system is organized into four modular layers:
 
 ### 2.1. MCP Server & Transport Layer
+- **Runtime**: **Bun** (>= 1.2/1.3) providing native TypeScript execution without build steps, automatic `.env` loading, and fast startup for CLI/stdio subprocesses.
 - **Responsibility**: Manages the MCP connection lifecycle, tool definitions, input validation, and JSON-RPC dispatching.
 - **Protocol**: MCP specification implemented via `@modelcontextprotocol/sdk`.
 - **Default Transport**: `StdioServerTransport` for local integration with desktop clients and CLI tools.
@@ -159,7 +160,8 @@ openproject-mcp/
 │   └── tools.test.ts            # MCP tool integration tests
 ├── AGENTS.md                    # Operating guidelines for AI agents
 ├── package.json                 # Project dependencies and scripts
-└── tsconfig.json                # TypeScript compiler configuration
+├── bun.lock                     # Bun dependency lockfile
+└── tsconfig.json                # TypeScript compiler configuration (Bun bundler mode)
 ```
 
 ---

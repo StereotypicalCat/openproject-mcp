@@ -32,7 +32,7 @@ A complete OpenProject 17 environment with PostgreSQL 17 and Memcached is includ
 ### Prerequisites
 
 - Docker and Docker Compose (v2+)
-- Node.js (>= 18) and npm
+- [Bun](https://bun.sh) (>= 1.2 / 1.3)
 
 ### 1. Start the Environment & Seed Data
 
@@ -85,6 +85,34 @@ To also remove database and asset volumes:
 
 ```bash
 docker compose down -v
+```
+
+---
+
+## MCP Server Development (Bun)
+
+Install project dependencies:
+
+```bash
+bun install
+```
+
+Start the MCP server over stdio:
+
+```bash
+bun run src/index.ts
+```
+
+Run test suite:
+
+```bash
+bun test
+```
+
+Type-check:
+
+```bash
+bun run typecheck
 ```
 
 ---

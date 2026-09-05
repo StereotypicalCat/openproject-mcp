@@ -7,7 +7,7 @@ This document records the key architectural and technical decisions made for `op
 ## ADR-001: Technology Stack Selection (TypeScript & Node.js)
 
 ### Status
-Accepted
+Superseded by ADR-010
 
 ### Context
 We need to build a companion MCP server for OpenProject (https://github.com/opf/openproject) that runs reliably on local machines and integrates smoothly with MCP clients such as Claude Desktop, Cursor, and Antigravity.
@@ -204,4 +204,34 @@ Target **OpenProject 17** (`openproject/openproject:17-slim`) for all containeri
   - Ensured compatibility with the latest API v3 specifications and authentication mechanics.
 - **Negative**:
   - Ensures we adhere to OpenProject 17's specific cache configuration and host name variables.
+
+---
+
+## ADR-010: Adopt Bun as Runtime, Package Manager, and Test Runner
+
+### Status
+Accepted (Supersedes ADR-001)
+
+### Context
+MCP servers are typically spawned by LLM desktop clients (Claude Desktop, Cursor, Antigravity) as child processes over `stdio`. Fast startup time, low memory footprint, zero compilation lag for TypeScript files, and integrated test runner ergonomics are vital for agentic development workflows.
+
+Bun provides:
+1. Native TypeScript and JSX execution without intermediate build steps or transpilers (`ts-node`, `esbuild`, `tsc`).
+2. Extremely fast package management (`bun install` in sub-second speeds) with modern text-based `bun.lock`.
+3. Built-in test runner (`bun test`, `bun:test`) eliminating external dependencies like Jest or Vitest.
+4. Native environment variable loading (`.env`, `.env.local`) without needing `dotenv`.
+5. High-performance native `fetch` and `Bun.file` APIs.
+
+### Decision
+Adopt **Bun** (>= 1.2 / 1.3) as the exclusive runtime, package manager, and test runner for `openproject-mcp`.
+
+### Consequences
+- **Positive**:
+  - Immediate startup with zero transpile overhead: `bun run src/index.ts`.
+  - Ultra-fast test execution: `bun test`.
+  - Simpler dependency tree: no `dotenv`, `ts-node`, `vitest`, or `jest`.
+  - Seamless developer experience matching Bun's project initialization conventions.
+- **Negative**:
+  - Requires the host machine to have Bun installed rather than traditional Node.js/npm.
+
 
