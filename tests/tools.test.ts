@@ -13,6 +13,14 @@ import {
   projectTools,
   registerProjectTools,
 } from "../src/tools/projects";
+import {
+  listWorkPackagesShape,
+  handleListWorkPackages,
+  getWorkPackageShape,
+  handleGetWorkPackage,
+  workPackageTools,
+  registerWorkPackageTools,
+} from "../src/tools/work-packages";
 import { OpenProjectNotFoundError } from "../src/client/errors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -266,6 +274,185 @@ describe("Project Tools", () => {
 
     expect(registeredTools["openproject_list_projects"]).toBeDefined();
     expect(registeredTools["openproject_get_project"]).toBeDefined();
+  });
+});
+
+describe("Work Package Tools", () => {
+  const dummyClient = {
+    get: async (path: string) => {
+      if (path === "/api/v3/work_packages/38" || path === "work_packages/38") {
+        return {
+          id: 38,
+          subject: "Seed Task 1",
+          description: { raw: "Desc" },
+          startDate: "2026-09-01",
+          dueDate: "2026-09-10",
+          estimatedTime: "PT8H",
+          percentageDone: 0,
+          createdAt: "2026-09-01T00:00:00Z",
+          updatedAt: "2026-09-01T00:00:00Z",
+          _links: {
+            self: { href: "/api/v3/work_packages/38" },
+            project: { href: "/api/v3/projects/4", title: "MCP Test Project" },
+            type: { href: "/api/v3/types/1", title: "Task" },
+            status: { href: "/api/v3/statuses/1", title: "New" },
+          },
+        };
+      }
+      return {
+        _embedded: {
+          elements: [
+            {
+              id: 38,
+              subject: "Seed Task 1",
+              _links: {
+                self: { href: "/api/v3/work_packages/38" },
+                project: { href: "/api/v3/projects/4", title: "MCP Test Project" },
+                type: { href: "/api/v3/types/1", title: "Task" },
+                status: { href: "/api/v3/statuses/1", title: "New" },
+              },
+            },
+          ],
+        },
+        total: 1,
+        count: 1,
+        pageSize: 20,
+        offset: 1,
+      };
+    },
+  } as unknown as OpenProjectClient;
+
+  test("listWorkPackages parses parameters and returns normalized list", async () => {
+    const schema = z.object(listWorkPackagesShape);
+    const parsed = schema.parse({ projectId: 4, status: "open" });
+    const response = await runWithContext({ client: dummyClient, isReadOnly: false }, () =>
+      handleListWorkPackages(parsed)
+    );
+
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.workPackages).toHaveLength(1);
+    expect(result.workPackages[0].id).toBe(38);
+    expect(result.workPackages[0].subject).toBe("Seed Task 1");
+    expect(result.total).toBe(1);
+  });
+
+  test("listWorkPackages accepts string projectId and filter options", async () => {
+    const schema = z.object(listWorkPackagesShape);
+    const parsed = schema.parse({
+      projectId: "mcp-test-project",
+      status: "closed",
+      type: 1,
+      assigneeId: 2,
+      subject: "Seed",
+      pageSize: 10,
+      offset: 1,
+      sortBy: "id:asc",
+    });
+    const response = await runWithContext({ client: dummyClient, isReadOnly: false }, () =>
+      handleListWorkPackages(parsed)
+    );
+
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.workPackages).toHaveLength(1);
+  });
+
+  test("listWorkPackages handles raw JSON string filters", async () => {
+    const schema = z.object(listWorkPackagesShape);
+    const parsed = schema.parse({
+      filters: JSON.stringify([{ status_id: { operator: "o", values: [] } }]),
+    });
+    const response = await runWithContext({ client: dummyClient, isReadOnly: false }, () =>
+      handleListWorkPackages(parsed)
+    );
+
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.workPackages).toHaveLength(1);
+  });
+
+  test("listWorkPackages rejects invalid schema arguments", () => {
+    const schema = z.object(listWorkPackagesShape);
+    expect(() => schema.parse({ pageSize: 500 })).toThrow();
+    expect(() => schema.parse({ pageSize: -1 })).toThrow();
+    expect(() => schema.parse({ offset: 0 })).toThrow();
+    expect(() => schema.parse({ projectId: "" })).toThrow();
+    expect(() => schema.parse({ projectId: -4 })).toThrow();
+    expect(() => schema.parse({ status: "invalid-status" })).toThrow();
+  });
+
+  test("handleListWorkPackages catches JSON parsing errors and returns error response", async () => {
+    const response = await runWithContext({ client: dummyClient, isReadOnly: false }, () =>
+      handleListWorkPackages({ filters: "{invalid-json" })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Error");
+  });
+
+  test("handleListWorkPackages catches non-array JSON filters and returns error response", async () => {
+    const response = await runWithContext({ client: dummyClient, isReadOnly: false }, () =>
+      handleListWorkPackages({ filters: '{"not":"an array"}' })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Filters must be a JSON array");
+  });
+
+  test("getWorkPackage parses numeric ID and returns details", async () => {
+    const schema = z.object(getWorkPackageShape);
+    const parsed = schema.parse({ workPackageId: 38 });
+    const response = await runWithContext({ client: dummyClient, isReadOnly: false }, () =>
+      handleGetWorkPackage(parsed)
+    );
+
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.id).toBe(38);
+    expect(result.subject).toBe("Seed Task 1");
+    expect(result.project).toBe("MCP Test Project");
+    expect(result.projectId).toBe(4);
+  });
+
+  test("getWorkPackage rejects non-positive or non-integer ID", () => {
+    const schema = z.object(getWorkPackageShape);
+    expect(() => schema.parse({ workPackageId: -1 })).toThrow();
+    expect(() => schema.parse({ workPackageId: 0 })).toThrow();
+    expect(() => schema.parse({ workPackageId: 3.14 })).toThrow();
+    expect(() => schema.parse({ workPackageId: "38" })).toThrow();
+  });
+
+  test("getWorkPackage catches errors and formats error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Work package not found");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext({ client: failingClient, isReadOnly: false }, () =>
+      handleGetWorkPackage({ workPackageId: 999 })
+    );
+
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Work package not found");
+  });
+
+  test("registerWorkPackageTools registers tools on McpServer", () => {
+    const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
+    registerWorkPackageTools(server);
+    expect(workPackageTools).toHaveLength(2);
+    expect(workPackageTools.map((t) => t.name)).toEqual([
+      "openproject_list_work_packages",
+      "openproject_get_work_package",
+    ]);
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<string, unknown>;
+      }
+    )._registeredTools;
+
+    expect(registeredTools["openproject_list_work_packages"]).toBeDefined();
+    expect(registeredTools["openproject_get_work_package"]).toBeDefined();
   });
 });
 
