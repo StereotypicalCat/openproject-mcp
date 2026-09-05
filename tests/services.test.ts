@@ -7,6 +7,13 @@ import {
   searchWorkPackages,
 } from "../src/services/work-packages.ts";
 import { listQueries, getQuery, getQueryResults } from "../src/services/queries.ts";
+import {
+  listStatuses,
+  listTypes,
+  listPriorities,
+  listUsers,
+} from "../src/services/metadata.ts";
+import * as domainServices from "../src/services/index.ts";
 import { OpenProjectClient } from "../src/client/api-client.ts";
 import { runWithContext, type RequestContext } from "../src/context.ts";
 
@@ -383,3 +390,129 @@ describe("Queries Service", () => {
     expect(result.items[0].subject).toBe("Implement MCP Server Core Protocol");
   });
 });
+
+describe("Metadata Service", () => {
+  test("listStatuses retrieves and unpacks status items", async () => {
+    const mockFetch = async () => {
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          _embedded: {
+            elements: [
+              { id: 1, name: "New", isClosed: false, isDefault: true },
+              { id: 2, name: "Closed", isClosed: true, isDefault: false },
+            ],
+          },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const statuses = await listStatuses(client);
+    expect(statuses.length).toBe(2);
+    expect(statuses[0].name).toBe("New");
+    expect(statuses[0].isClosed).toBe(false);
+    expect(statuses[1].isClosed).toBe(true);
+  });
+
+  test("listTypes scopes to project when projectId is provided", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          _embedded: {
+            elements: [{ id: 1, name: "Task", isMilestone: false }],
+          },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const types = await listTypes({ projectId: 4 }, client);
+    expect(requestedUrl).toContain("/api/v3/projects/4/types");
+    expect(types[0].name).toBe("Task");
+  });
+
+  test("listPriorities retrieves priority items", async () => {
+    const mockFetch = async () => {
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          _embedded: {
+            elements: [{ id: 8, name: "High", isActive: true }],
+          },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const priorities = await listPriorities(client);
+    expect(priorities[0].name).toBe("High");
+  });
+
+  test("listUsers returns paginated UserItem list", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 25,
+          offset: 1,
+          _embedded: {
+            elements: [{ id: 1, name: "Admin User", login: "admin", admin: true }],
+          },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const users = await listUsers({ pageSize: 25, offset: 1 }, client);
+    expect(requestedUrl).toContain("/api/v3/users");
+    expect(users.items[0].login).toBe("admin");
+    expect(users.items[0].admin).toBe(true);
+  });
+
+  test("src/services/index.ts exports all services properly", () => {
+    expect(typeof domainServices.listProjects).toBe("function");
+    expect(typeof domainServices.getProject).toBe("function");
+    expect(typeof domainServices.getProjectSchema).toBe("function");
+    expect(typeof domainServices.listWorkPackages).toBe("function");
+    expect(typeof domainServices.getWorkPackage).toBe("function");
+    expect(typeof domainServices.listQueries).toBe("function");
+    expect(typeof domainServices.getQuery).toBe("function");
+    expect(typeof domainServices.listStatuses).toBe("function");
+    expect(typeof domainServices.listTypes).toBe("function");
+    expect(typeof domainServices.listPriorities).toBe("function");
+    expect(typeof domainServices.listUsers).toBe("function");
+  });
+});
+
