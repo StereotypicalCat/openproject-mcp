@@ -44,13 +44,13 @@
 
 ## 2. Next Up (Phase 1: Read/Browse Implementation)
 
-- [ ] **Task 1: OpenProject REST API v3 Client Layer**
-  - [ ] Implement `src/config/index.ts` to parse and validate `OPENPROJECT_BASE_URL`, `OPENPROJECT_API_KEY`, and `OPENPROJECT_READ_ONLY` (or `--read-only`) via Zod.
-  - [ ] Implement `src/context.ts` providing `RequestContext` interface and `AsyncLocalStorage` scoping (`getRequestContext`, `runWithContext`) for concurrent multi-user safety.
-  - [ ] Implement `src/client/api-client.ts` with native `fetch`, HTTP Basic Auth injection, error normalization, and rate/timeout handling.
-  - [ ] Implement `src/client/hal-parser.ts` to unpack HAL+JSON (`_links`, `_embedded`) into clean, token-efficient JSON models.
-  - [ ] Implement `src/client/filter-builder.ts` to translate LLM-friendly filter arguments into OpenProject's JSON filter syntax.
-  - [ ] Add unit tests in `tests/client.test.ts` verifying authentication headers, response parsing, and error sanitization against live container.
+- [x] **Task 1: OpenProject REST API v3 Client Layer**
+  - [x] Implement `src/config/index.ts` to parse and validate `OPENPROJECT_BASE_URL`, `OPENPROJECT_API_KEY`, and `OPENPROJECT_READ_ONLY` (or `--read-only`) via Zod.
+  - [x] Implement `src/context.ts` providing `RequestContext` interface and `AsyncLocalStorage` scoping (`getRequestContext`, `runWithContext`) for concurrent multi-user safety.
+  - [x] Implement `src/client/api-client.ts` with native `fetch`, HTTP Basic Auth injection, error normalization, and rate/timeout handling.
+  - [x] Implement `src/client/hal-parser.ts` to unpack HAL+JSON (`_links`, `_embedded`) into clean, token-efficient JSON models.
+  - [x] Implement `src/client/filter-builder.ts` to translate LLM-friendly filter arguments into OpenProject's JSON filter syntax.
+  - [x] Add unit tests in `tests/client.test.ts` verifying authentication headers, response parsing, and error sanitization against live container.
 
 - [ ] **Task 2: Domain Services**
   - [ ] Implement `src/services/projects.ts` (`listProjects`, `getProject`).
