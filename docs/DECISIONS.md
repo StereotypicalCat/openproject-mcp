@@ -234,4 +234,29 @@ Adopt **Bun** (>= 1.2 / 1.3) as the exclusive runtime, package manager, and test
 - **Negative**:
   - Requires the host machine to have Bun installed rather than traditional Node.js/npm.
 
+---
+
+## ADR-011: Configurable Read-Only Execution Mode
+
+### Status
+Accepted
+
+### Context
+When integrating MCP servers with LLMs, users and administrators require granular safety boundaries. In many scenarios (e.g., exploratory analysis, code reviews, status summaries, onboarding, or automated audit agents), users want to grant the LLM visibility into OpenProject projects, work packages, and queries without granting write permissions that could accidentally modify tickets or corrupt project state.
+
+### Decision
+Implement an explicit, configurable **Read-Only Mode**:
+1. Enabled via the `OPENPROJECT_READ_ONLY=true` environment variable or `--read-only` command-line argument.
+2. **Tool Manifest Level**: When read-only mode is active, mutating tools (Phase 2 write tools such as create/update work package) are entirely omitted from the `ListTools` response sent to the MCP client. The LLM only sees browsing and query tools.
+3. **Execution Guard Level**: As defense-in-depth, the server's tool execution dispatcher checks the read-only flag before invoking any tool marked as mutating, immediately rejecting write attempts with `SERVER_READ_ONLY`.
+
+### Consequences
+- **Positive**:
+  - Complete safety for users wanting strictly observational LLM capabilities.
+  - Zero token waste exposing mutation tool definitions that the agent is forbidden from using.
+  - Clean separation between queries and commands.
+- **Negative**:
+  - Tools must explicitly declare whether they are mutating or read-only during registration.
+
+
 

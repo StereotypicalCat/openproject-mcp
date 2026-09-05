@@ -71,7 +71,14 @@ Domain services map MCP tool calls to concrete business logic and OpenProject AP
 - Parses and validates configuration at startup:
   - `OPENPROJECT_BASE_URL`: Base URL of the OpenProject instance (e.g., `https://openproject.example.com`).
   - `OPENPROJECT_API_KEY`: User API key generated in OpenProject under "My Account > Access tokens".
+  - `OPENPROJECT_READ_ONLY`: Boolean flag (`true` / `false`, default: `false`). Can also be set via `--read-only` CLI argument.
 - Fails fast with actionable setup advice if required credentials are missing or invalid.
+
+### 2.5. Read-Only Execution Mode
+The server supports a dedicated read-only operating mode designed for auditing, reporting, and exploratory agent workflows:
+- **Tool Filtering**: When read-only mode is active, only read/browse/query tools are registered in the MCP tool registry. Mutating tools (creating work packages, updating attributes, logging time) are completely excluded from the tool manifest exposed to the LLM.
+- **Defense-in-Depth Guard**: In addition to tool manifest omission, the internal tool router validates whether an operation is a mutating action. Any write attempt is immediately rejected with a structured error (`SERVER_READ_ONLY: Server is operating in read-only mode. Write operations are disabled.`).
+- **Safe Auditing**: Guarantees zero unintentional data modification or state changes in the OpenProject instance.
 
 ---
 
@@ -125,6 +132,7 @@ The client layer provides helper builders so tools can accept friendly parameter
 2. **Permission Boundary**: The MCP server operates with the exact permission scope of the provided API key. No elevated access is granted beyond what the user possesses in OpenProject.
 3. **Input Sanitization**: All arguments from the LLM are validated via Zod schemas prior to making network requests, preventing request-smuggling or path traversal.
 4. **Transport Isolation**: The default stdio transport communicates only through standard input/output with the host client process, with no exposed network ports.
+5. **Read-Only Enforcement**: Configurable read-only mode (`OPENPROJECT_READ_ONLY=true`) guarantees zero write side-effects on the OpenProject instance when operating in exploratory or untrusted agent sessions.
 
 ---
 

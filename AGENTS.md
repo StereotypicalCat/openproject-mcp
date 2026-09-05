@@ -79,6 +79,7 @@ Welcome to the `openproject-mcp` project. This document defines operating princi
 - **Secrets Management**: Read `OPENPROJECT_BASE_URL` and `OPENPROJECT_API_KEY` from environment variables. Never hardcode credentials in tests, scripts, or examples.
 - **Input Validation**: All tool parameters must be validated via Zod schemas before being used in HTTP requests.
 - **Safe Error Propagation**: Sanitize error messages returned to the MCP client. Never leak authorization headers or system paths in tool error responses.
+- **Read-Only Mode Enforcement**: Support `OPENPROJECT_READ_ONLY=true` and `--read-only`. When active, mutating tools must not be registered in the MCP tool manifest and must be rejected by execution guards with `SERVER_READ_ONLY`.
 
 ---
 

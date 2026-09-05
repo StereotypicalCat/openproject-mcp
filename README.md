@@ -126,9 +126,22 @@ The MCP server accepts configuration through environment variables or a `.env` f
 | :--- | :--- | :--- |
 | `OPENPROJECT_BASE_URL` | Base URL of the OpenProject instance | `http://localhost:8080` |
 | `OPENPROJECT_API_KEY` | Personal API token (created under My Account > Access tokens) | - |
+| `OPENPROJECT_READ_ONLY` | Run server in read-only mode (`true` / `false` or `--read-only`) | `false` |
 | `PORT` | Local port for the Docker Compose web container | `8080` |
 | `TAG` | OpenProject container image tag | `17-slim` |
 | `POSTGRES_VERSION` | PostgreSQL container image tag | `17` |
+
+### Read-Only Mode
+
+To ensure AI assistants cannot make any modifications to your OpenProject instance, enable read-only mode:
+
+```bash
+OPENPROJECT_READ_ONLY=true bun run src/index.ts
+# or
+bun run src/index.ts --read-only
+```
+
+When active, write tools are omitted from the tool manifest and blocked by execution guards.
 
 ---
 

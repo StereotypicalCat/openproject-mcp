@@ -45,7 +45,7 @@
 ## 2. Next Up (Phase 1: Read/Browse Implementation)
 
 - [ ] **Task 1: OpenProject REST API v3 Client Layer**
-  - [ ] Implement `src/config/index.ts` to parse and validate `OPENPROJECT_BASE_URL` and `OPENPROJECT_API_KEY` via Zod.
+  - [ ] Implement `src/config/index.ts` to parse and validate `OPENPROJECT_BASE_URL`, `OPENPROJECT_API_KEY`, and `OPENPROJECT_READ_ONLY` (or `--read-only`) via Zod.
   - [ ] Implement `src/client/api-client.ts` with native `fetch`, HTTP Basic Auth injection, error normalization, and rate/timeout handling.
   - [ ] Implement `src/client/hal-parser.ts` to unpack HAL+JSON (`_links`, `_embedded`) into clean, token-efficient JSON models.
   - [ ] Implement `src/client/filter-builder.ts` to translate LLM-friendly filter arguments into OpenProject's JSON filter syntax.
@@ -73,8 +73,10 @@
 
 - [ ] **Task 4: MCP Stdio Server Assembly & Integration**
   - [ ] Wire domain tools into `@modelcontextprotocol/sdk` Server using `StdioServerTransport` in `src/server.ts` and `src/index.ts`.
+  - [ ] Implement read-only mode tool filtering (omits mutating tools when `readOnly` is enabled) and execution guard (`SERVER_READ_ONLY`).
   - [ ] Ensure all logging is strictly redirected to `stderr`.
   - [ ] Add end-to-end integration tests in `tests/mcp-server.test.ts` verifying tool calling against the running OpenProject 17 instance.
+  - [ ] Add read-only mode verification tests in `tests/read-only.test.ts`.
 
 ---
 
