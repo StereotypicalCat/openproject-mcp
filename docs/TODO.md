@@ -53,11 +53,12 @@
   - [x] Add unit tests in `tests/client.test.ts` verifying authentication headers, response parsing, and error sanitization against live container.
 
 - [ ] **Task 2: Domain Services**
-  - [ ] Implement `src/services/projects.ts` (`listProjects`, `getProject`).
-  - [ ] Implement `src/services/work-packages.ts` (`listWorkPackages`, `getWorkPackage`, `searchWorkPackages`).
-  - [ ] Implement `src/services/queries.ts` (`listQueries`, `getQuery`).
+  - [x] Implement `src/services/helper.ts` (`resolveClient` for ambient `RequestContext` resolution).
+  - [x] Implement `src/services/projects.ts` (`listProjects`, `getProject`, `getProjectSchema`).
+  - [x] Implement `src/services/work-packages.ts` (`listWorkPackages`, `getWorkPackage`, `searchWorkPackages`).
+  - [ ] Implement `src/services/queries.ts` (`listQueries`, `getQuery`, `getQueryResults`).
   - [ ] Implement `src/services/metadata.ts` (`listStatuses`, `listTypes`, `listPriorities`, `listUsers`).
-  - [ ] Add service tests in `tests/services.test.ts`.
+  - [/] Add service tests in `tests/services.test.ts` (helper, projects, and work packages test suites passing).
 
 - [ ] **Task 3: MCP Tool Definitions & Schema Registration**
   - [ ] Define Zod schemas and register tools in `src/tools/`:

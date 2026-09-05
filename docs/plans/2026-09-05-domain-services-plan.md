@@ -29,7 +29,7 @@
 - Consumes: `getRequestContext` from `src/context.ts`, `OpenProjectClient` from `src/client/api-client.ts`
 - Produces: `resolveClient(client?: OpenProjectClient): OpenProjectClient`
 
-- [ ] **Step 1: Write the failing test for client resolution**
+- [x] **Step 1: Write the failing test for client resolution**
 
 In `tests/services.test.ts`:
 ```typescript
@@ -70,12 +70,12 @@ describe("Domain Services Helper", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/services.test.ts`
 Expected: FAIL with module not found `../src/services/helper.ts`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `src/services/helper.ts`:
 ```typescript
@@ -95,12 +95,12 @@ export function resolveClient(client?: OpenProjectClient): OpenProjectClient {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/services.test.ts`
 Expected: PASS (3 tests passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/helper.ts tests/services.test.ts
@@ -127,7 +127,7 @@ git commit -m "feat(services): implement shared client resolution helper"
   - `getProjectSchema(client?: OpenProjectClient): Promise<Record<string, unknown>>`
   - `ListProjectsParams` interface
 
-- [ ] **Step 1: Write failing tests for projects service**
+- [x] **Step 1: Write failing tests for projects service**
 
 Append to `tests/services.test.ts`:
 ```typescript
@@ -226,12 +226,12 @@ describe("Projects Service", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/services.test.ts`
 Expected: FAIL with module not found `../src/services/projects.ts`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `src/services/projects.ts`:
 ```typescript
@@ -306,12 +306,12 @@ export async function getProjectSchema(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/services.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/projects.ts tests/services.test.ts
@@ -339,7 +339,7 @@ git commit -m "feat(services): implement projects domain service"
   - `searchWorkPackages(query: string, options?: SearchWorkPackagesOptions, client?: OpenProjectClient): Promise<PaginatedResult<WorkPackageSummary>>`
   - `ListWorkPackagesParams`, `SearchWorkPackagesOptions` interfaces
 
-- [ ] **Step 1: Write failing tests for work packages service**
+- [x] **Step 1: Write failing tests for work packages service**
 
 Append to `tests/services.test.ts`:
 ```typescript
@@ -468,12 +468,12 @@ describe("Work Packages Service", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/services.test.ts`
 Expected: FAIL with module not found `../src/services/work-packages.ts`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `src/services/work-packages.ts`:
 ```typescript
@@ -567,12 +567,12 @@ export async function searchWorkPackages(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/services.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/work-packages.ts tests/services.test.ts
