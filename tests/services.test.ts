@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { resolveClient } from "../src/services/helper.ts";
+import { resolveClient, resolveProjectId } from "../src/services/helper.ts";
 import { listProjects, getProject, getProjectSchema } from "../src/services/projects.ts";
 import {
   listWorkPackages,
@@ -45,6 +45,26 @@ describe("Domain Services Helper", () => {
 
   test("resolveClient throws error when called without client and outside context", () => {
     expect(() => resolveClient()).toThrow("No active RequestContext found");
+  });
+
+  test("resolveProjectId returns numeric ID directly if number or numeric string", async () => {
+    expect(await resolveProjectId(4)).toBe(4);
+    expect(await resolveProjectId("42")).toBe(42);
+  });
+
+  test("resolveProjectId fetches project ID when string identifier provided", async () => {
+    const mockFetch = async () => {
+      return new Response(JSON.stringify({ id: 99, identifier: "custom-slug" }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+    const id = await resolveProjectId("custom-slug", client);
+    expect(id).toBe(99);
   });
 });
 
@@ -513,6 +533,70 @@ describe("Metadata Service", () => {
     expect(typeof domainServices.listTypes).toBe("function");
     expect(typeof domainServices.listPriorities).toBe("function");
     expect(typeof domainServices.listUsers).toBe("function");
+  });
+});
+
+describe("Live Container Integration (Domain Services)", () => {
+  const liveBaseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";
+  const liveApiKey = process.env.OPENPROJECT_API_KEY;
+
+  const runLiveTests = liveApiKey ? test : test.skip;
+
+  runLiveTests("live: projects service operations", async () => {
+    const client = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey! });
+
+    const projects = await domainServices.listProjects({ pageSize: 5 }, client);
+    expect(projects.items.length).toBeGreaterThan(0);
+
+    const testProject = await domainServices.getProject("mcp-test-project", client);
+    expect(testProject.identifier).toBe("mcp-test-project");
+    expect(testProject.id).toBeGreaterThan(0);
+  });
+
+  runLiveTests("live: work packages service operations", async () => {
+    const client = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey! });
+
+    const wps = await domainServices.listWorkPackages({ projectId: "mcp-test-project" }, client);
+    expect(wps.items.length).toBeGreaterThan(0);
+
+    const firstWp = await domainServices.getWorkPackage(wps.items[0].id, client);
+    expect(firstWp.id).toBe(wps.items[0].id);
+    expect(firstWp.subject).toBeDefined();
+
+    const searchRes = await domainServices.searchWorkPackages("MCP", { projectId: "mcp-test-project" }, client);
+    expect(searchRes.items.length).toBeGreaterThan(0);
+  });
+
+  runLiveTests("live: queries service operations", async () => {
+    const client = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey! });
+
+    const queries = await domainServices.listQueries({ projectId: "mcp-test-project" }, client);
+    expect(queries.items.length).toBeGreaterThan(0);
+
+    const activeQuery = queries.items.find((q) => q.name.includes("MCP Active Tasks"));
+    if (activeQuery) {
+      const detail = await domainServices.getQuery(activeQuery.id, client);
+      expect(detail.id).toBe(activeQuery.id);
+
+      const results = await domainServices.getQueryResults(activeQuery.id, {}, client);
+      expect(results.items.length).toBeGreaterThan(0);
+    }
+  });
+
+  runLiveTests("live: metadata service operations", async () => {
+    const client = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey! });
+
+    const statuses = await domainServices.listStatuses(client);
+    expect(statuses.length).toBeGreaterThan(0);
+
+    const types = await domainServices.listTypes({ projectId: "mcp-test-project" }, client);
+    expect(types.length).toBeGreaterThan(0);
+
+    const priorities = await domainServices.listPriorities(client);
+    expect(priorities.length).toBeGreaterThan(0);
+
+    const users = await domainServices.listUsers({ pageSize: 5 }, client);
+    expect(users.items.length).toBeGreaterThan(0);
   });
 });
 

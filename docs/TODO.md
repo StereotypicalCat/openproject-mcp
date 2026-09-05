@@ -52,13 +52,13 @@
   - [x] Implement `src/client/filter-builder.ts` to translate LLM-friendly filter arguments into OpenProject's JSON filter syntax.
   - [x] Add unit tests in `tests/client.test.ts` verifying authentication headers, response parsing, and error sanitization against live container.
 
-- [ ] **Task 2: Domain Services**
+- [x] **Task 2: Domain Services**
   - [x] Implement `src/services/helper.ts` (`resolveClient` for ambient `RequestContext` resolution).
   - [x] Implement `src/services/projects.ts` (`listProjects`, `getProject`, `getProjectSchema`).
   - [x] Implement `src/services/work-packages.ts` (`listWorkPackages`, `getWorkPackage`, `searchWorkPackages`).
-  - [ ] Implement `src/services/queries.ts` (`listQueries`, `getQuery`, `getQueryResults`).
-  - [ ] Implement `src/services/metadata.ts` (`listStatuses`, `listTypes`, `listPriorities`, `listUsers`).
-  - [/] Add service tests in `tests/services.test.ts` (helper, projects, and work packages test suites passing).
+  - [x] Implement `src/services/queries.ts` (`listQueries`, `getQuery`, `getQueryResults`).
+  - [x] Implement `src/services/metadata.ts` (`listStatuses`, `listTypes`, `listPriorities`, `listUsers`).
+  - [x] Add service tests in `tests/services.test.ts` (unit tests and live container integration suite passing).
 
 - [ ] **Task 3: MCP Tool Definitions & Schema Registration**
   - [ ] Define Zod schemas and register tools in `src/tools/`:
