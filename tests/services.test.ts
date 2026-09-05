@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { resolveClient } from "../src/services/helper.ts";
 import { listProjects, getProject, getProjectSchema } from "../src/services/projects.ts";
+import {
+  listWorkPackages,
+  getWorkPackage,
+  searchWorkPackages,
+} from "../src/services/work-packages.ts";
 import { OpenProjectClient } from "../src/client/api-client.ts";
 import { runWithContext, type RequestContext } from "../src/context.ts";
 
@@ -126,4 +131,123 @@ describe("Projects Service", () => {
     expect(result._type).toBe("Schema");
   });
 });
+
+describe("Work Packages Service", () => {
+  const sampleWpHal = {
+    _type: "WorkPackage",
+    id: 38,
+    subject: "Implement MCP Server Core Protocol",
+    description: { format: "markdown", raw: "Build stdio transport" },
+    startDate: "2026-09-01",
+    dueDate: "2026-09-10",
+    lockVersion: 3,
+    _links: {
+      self: { href: "/api/v3/work_packages/38", title: "Implement MCP Server Core Protocol" },
+      project: { href: "/api/v3/projects/4", title: "MCP Test Project" },
+      type: { href: "/api/v3/types/1", title: "Task" },
+      status: { href: "/api/v3/statuses/2", title: "In progress" },
+      priority: { href: "/api/v3/priorities/8", title: "High" },
+      author: { href: "/api/v3/users/1", title: "Admin User" },
+      assignee: { href: "/api/v3/users/1", title: "Admin User" },
+      parent: { href: "/api/v3/work_packages/30", title: "Epic Parent" },
+      children: [
+        { href: "/api/v3/work_packages/39", title: "Subtask 1" },
+        { href: "/api/v3/work_packages/40", title: "Subtask 2" },
+      ],
+    },
+  };
+
+  test("listWorkPackages applies filter parameters and normalizes collection", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 25,
+          offset: 1,
+          _embedded: { elements: [sampleWpHal] },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const result = await listWorkPackages(
+      { projectId: 4, status: "open", typeId: 1, pageSize: 25 },
+      client
+    );
+
+    expect(requestedUrl).toContain("/api/v3/work_packages");
+    expect(requestedUrl).toContain("filters=");
+    expect(requestedUrl).toContain("pageSize=25");
+    expect(result.total).toBe(1);
+    expect(result.items[0].id).toBe(38);
+    expect(result.items[0].subject).toBe("Implement MCP Server Core Protocol");
+    expect(result.items[0].status).toBe("In progress");
+    expect(result.items[0].type).toBe("Task");
+  });
+
+  test("getWorkPackage returns full details with parent and children", async () => {
+    const mockFetch = async () => {
+      return new Response(JSON.stringify(sampleWpHal), {
+        headers: { "Content-Type": "application/hal+json" },
+      });
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const wp = await getWorkPackage(38, client);
+    expect(wp.id).toBe(38);
+    expect(wp.subject).toBe("Implement MCP Server Core Protocol");
+    expect(wp.parent?.id).toBe(30);
+    expect(wp.parent?.subject).toBe("Epic Parent");
+    expect(wp.children?.length).toBe(2);
+    expect(wp.children?.[0].id).toBe(39);
+    expect(wp.lockVersion).toBe(3);
+  });
+
+  test("searchWorkPackages sets subject query filter", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 10,
+          offset: 1,
+          _embedded: { elements: [sampleWpHal] },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    await searchWorkPackages("MCP Server", { projectId: 4 }, client);
+    expect(requestedUrl).toContain("filters=");
+    // Filter must include substring operator for subject
+    const decodedUrl = decodeURIComponent(requestedUrl.replace(/\+/g, " "));
+    expect(decodedUrl).toContain('"subject"');
+    expect(decodedUrl).toContain("MCP Server");
+  });
+});
+
 
