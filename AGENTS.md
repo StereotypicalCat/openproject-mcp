@@ -46,6 +46,7 @@ Welcome to the `openproject-mcp` project. This document defines operating princi
 ### Code Style
 - **TypeScript**: Strict type checking enabled (`strict: true` in `tsconfig.json`). Avoid `any` - use `unknown` with type guards or explicit Zod schemas.
 - **Modularity**: Separate transport/MCP protocol concerns from OpenProject domain logic and HTTP client handling.
+- **Stateless Services & Request Scoping**: Never store API tokens or client instances in global mutable variables. Tool handlers and domain services must retrieve the user's isolated client via `RequestContext` (`AsyncLocalStorage`) to guarantee multi-user concurrency and credential isolation.
 - **Naming Conventions**:
   - Files and directories: `kebab-case` (e.g., `openproject-client.ts`, `work-packages.ts`).
   - Types and Interfaces: `PascalCase` (e.g., `OpenProjectConfig`, `WorkPackageResource`).

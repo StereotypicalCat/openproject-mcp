@@ -258,5 +258,46 @@ Implement an explicit, configurable **Read-Only Mode**:
 - **Negative**:
   - Tools must explicitly declare whether they are mutating or read-only during registration.
 
+---
+
+## ADR-012: Request-Scoped Context Architecture for Multi-User Concurrency & Security
+
+### Status
+Accepted
+
+### Context
+We want multiple users to interact with OpenProject via the MCP server concurrently, each using their own personal API key and receiving responses according to their own OpenProject permissions (RBAC).
+
+Two architectural options were considered:
+1. **Global Singleton Client**: Easy to write for single-user CLI scripts, but completely broken for concurrent users (race conditions, token overwriting, cross-user privilege escalation, and token leakage).
+2. **Request-Scoped Context Pattern (`RequestContext` + `AsyncLocalStorage`)**: Every incoming request/connection carries or resolves an isolated `RequestContext` containing an ephemeral `OpenProjectClient` configured with that user's specific API credentials.
+
+### Decision
+Adopt the **Request-Scoped Context Architecture**:
+1. **No Global State**: No singleton `OpenProjectClient` instance or mutable global API token will be maintained.
+2. **Context Interface**:
+   ```typescript
+   export interface RequestContext {
+     client: OpenProjectClient;
+     isReadOnly: boolean;
+     sessionId?: string;
+     userId?: string;
+   }
+   ```
+3. **Dual-Transport Compatibility**:
+   - **Local Stdio Mode**: The process context initializes a single `RequestContext` from local environment variables or CLI flags, isolated at the OS process boundary.
+   - **Shared Server (SSE / HTTP) Mode**: The connection handler extracts the user's API key from HTTP request headers (`Authorization: Basic ...` or `X-OpenProject-API-Key`), builds an ephemeral `RequestContext`, and wraps tool execution inside `requestContextStorage.run(context, fn)`.
+4. **Stateless Services**: All domain services (`ProjectsService`, `WorkPackagesService`, etc.) are stateless function collections or classes that resolve the current user's client from `getRequestContext()`.
+
+### Consequences
+- **Positive**:
+  - Eliminates cross-user token leaks and race conditions in concurrent multi-user environments.
+  - Automatically respects OpenProject's per-user Role-Based Access Control (User A only sees User A's data).
+  - Unifies local desktop (`stdio`) and remote shared (`sse`) implementations under a single domain codebase.
+  - Tokens and client instances are ephemeral and garbage-collected with the request lifecycle.
+- **Negative**:
+  - Tool handlers must access their client via `getRequestContext()` rather than directly importing a static instance.
+
+
 
 

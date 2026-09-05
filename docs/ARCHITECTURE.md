@@ -6,38 +6,42 @@
 
 ```mermaid
 flowchart LR
-    subgraph Client ["MCP Client"]
-        Agent["LLM Agent / Assistant"]
+    subgraph Clients ["MCP Clients (Multi-User)"]
+        UserA["User A Client\n(Key A)"]
+        UserB["User B Client\n(Key B)"]
     end
 
-    subgraph Server ["openproject-mcp Server"]
-        Transport["Stdio Transport"]
-        Router["Tool & Resource Router"]
-        
-        subgraph DomainServices ["Domain Services"]
-            ProjSvc["Projects Service"]
-            WpSvc["Work Packages Service"]
-            QuerySvc["Queries Service"]
-            MetaSvc["Metadata & Taxonomies"]
-        end
+    subgraph Transports ["Transport Layer"]
+        Stdio["Stdio Transport\n(Personal Process Isolation)"]
+        SSE["SSE / HTTP Transport\n(Shared Central Daemon)"]
+    end
 
-        ClientCore["OpenProject API Client"]
-        AuthHandler["Auth & Request Builder\n(Basic Auth: apikey:<token>)"]
-        HalParser["HAL+JSON Parser & Normalizer"]
+    subgraph ContextLayer ["Session & Request Context Provider"]
+        ALS["AsyncLocalStorage /\nSession Context Resolver"]
+        CtxA["RequestContext A\n(Client A, Key A)"]
+        CtxB["RequestContext B\n(Client B, Key B)"]
+    end
+
+    subgraph DomainServices ["Domain Services (Stateless)"]
+        ProjSvc["Projects Service"]
+        WpSvc["Work Packages Service"]
+        QuerySvc["Queries Service"]
+        MetaSvc["Metadata & Taxonomies"]
     end
 
     subgraph Remote ["OpenProject Instance"]
-        ApiV3["REST API v3 (/api/v3)"]
+        ApiV3["OpenProject REST API v3\n(/api/v3 - RBAC Enforced)"]
     end
 
-    Agent <-->|MCP JSON-RPC (stdio)| Transport
-    Transport <--> Router
-    Router --> DomainServices
-    DomainServices --> ClientCore
-    ClientCore --> AuthHandler
-    ClientCore --> HalParser
-    AuthHandler -->|HTTPS Requests| ApiV3
-    ApiV3 -->|HAL+JSON Responses| HalParser
+    UserA -->|stdio or HTTP headers| Stdio
+    UserB -->|HTTP headers| SSE
+    Stdio --> ALS
+    SSE --> ALS
+    ALS --> CtxA
+    ALS --> CtxB
+    CtxA --> DomainServices
+    CtxB --> DomainServices
+    DomainServices -->|Authenticated API Requests| ApiV3
 ```
 
 ---
@@ -82,7 +86,48 @@ The server supports a dedicated read-only operating mode designed for auditing, 
 
 ---
 
-## 3. Tool Specifications (Browse & Query Scope)
+## 3. Multi-User Concurrency & Request-Scoped Architecture
+
+The server is architected from the ground up to support concurrent, multi-user operations safely without cross-user credential leakage, state bleed, or privilege escalation.
+
+### 3.1. Core Concurrency Rules
+1. **Zero Global Mutable State**: No global singleton `OpenProjectClient` or static API key variable exists.
+2. **Stateless Domain Services**: All domain services (`ProjectsService`, `WorkPackagesService`, etc.) are stateless and operate exclusively on the `RequestContext` resolved for the active execution.
+3. **RequestContext Interface**:
+   ```typescript
+   export interface RequestContext {
+     client: OpenProjectClient;
+     isReadOnly: boolean;
+     sessionId?: string;
+     userId?: string;
+   }
+   ```
+4. **Context Propagation via AsyncLocalStorage**:
+   In Bun/TypeScript, request context is propagated down asynchronous call trees using `AsyncLocalStorage<RequestContext>`. Tool handlers access `getRequestContext()` to obtain their session's isolated client and read-only flags cleanly.
+
+### 3.2. Supported Deployment Models
+
+#### Model A: Local Personal Desktop (Stdio Transport - Default)
+- **Deployment**: The MCP client (Claude Desktop, Cursor, local CLI) spawns `openproject-mcp` as a dedicated child process communicating via standard input/output.
+- **Isolation**: OS-level process and memory boundary.
+- **Credentials**: Passed via process environment variables or local MCP client configuration.
+- **Security**: Complete isolation. Zero network ports exposed.
+
+#### Model B: Centralized Shared Server (SSE / HTTP Transport)
+- **Deployment**: A single shared `openproject-mcp` daemon runs centrally for a team or cluster.
+- **Isolation**: Connection and request-level isolation.
+- **Credential Delivery via Headers**:
+  - Each connecting client supplies their OpenProject API token via standard HTTP headers during connection handshake and request dispatch:
+    - `Authorization: Basic base64(apikey:<USER_API_KEY>)`, or
+    - `X-OpenProject-API-Key: <USER_API_KEY>`
+    - Optional: `X-OpenProject-Read-Only: true`
+  - The transport layer extracts the credentials, instantiates an ephemeral scoped `OpenProjectClient`, and executes tool calls inside `requestContextStorage.run(context, ...)`.
+- **RBAC Enforcement**: All calls execute against OpenProject REST API v3 using that specific user's token. OpenProject's internal Role-Based Access Control guarantees users only retrieve projects and work packages they have permission to access.
+- **Lifecycle**: Ephemeral client instances and tokens reside only in active session memory and are garbage collected upon connection close.
+
+---
+
+## 4. Tool Specifications (Browse & Query Scope)
 
 | MCP Tool Name | Description | Key Parameters |
 | :--- | :--- | :--- |
@@ -99,9 +144,9 @@ The server supports a dedicated read-only operating mode designed for auditing, 
 
 ---
 
-## 4. OpenProject API v3 Specifics
+## 5. OpenProject API v3 Specifics
 
-### 4.1. Authentication Details
+### 5.1. Authentication Details
 OpenProject API v3 utilizes HTTP Basic Authentication for API tokens:
 ```http
 GET /api/v3/projects HTTP/1.1
@@ -111,10 +156,10 @@ Accept: application/hal+json
 ```
 Where `YXBpa2V5OnlvdXItb3BlbnByb2plY3QtYXBpLWtleQ==` is the Base64 encoding of `apikey:<your-api-key>`.
 
-### 4.2. HAL+JSON Handling
+### 5.2. HAL+JSON Handling
 API responses contain `_links` linking to related resources (parent project, author, assignee, status, type). The client layer normalizes these into human-readable labels and numeric IDs so the LLM agent can reason over them easily.
 
-### 4.3. Filter Syntax Translation
+### 5.3. Filter Syntax Translation
 OpenProject filters are passed via a URL-encoded JSON string array. Example:
 ```json
 [
@@ -126,26 +171,29 @@ The client layer provides helper builders so tools can accept friendly parameter
 
 ---
 
-## 5. Security & Isolation
+## 6. Security & Isolation
 
-1. **Token Protection**: Credentials are read from environment variables or standard config files. Tokens are never echoed in logs or responses.
-2. **Permission Boundary**: The MCP server operates with the exact permission scope of the provided API key. No elevated access is granted beyond what the user possesses in OpenProject.
+1. **Token Protection**: Credentials are read from environment variables or per-connection HTTP headers. Tokens are never echoed in logs or tool payloads.
+2. **Permission Boundary**: The MCP server operates strictly within the permission scope of the provided API key. No elevated access is granted beyond what the user possesses in OpenProject.
 3. **Input Sanitization**: All arguments from the LLM are validated via Zod schemas prior to making network requests, preventing request-smuggling or path traversal.
 4. **Transport Isolation**: The default stdio transport communicates only through standard input/output with the host client process, with no exposed network ports.
 5. **Read-Only Enforcement**: Configurable read-only mode (`OPENPROJECT_READ_ONLY=true`) guarantees zero write side-effects on the OpenProject instance when operating in exploratory or untrusted agent sessions.
+6. **Multi-Tenant Memory Isolation**: Ephemeral `RequestContext` instances isolated via `AsyncLocalStorage` guarantee zero token bleed or cross-user contamination in concurrent shared server environments.
 
 ---
 
-## 6. Project Directory Structure
+## 7. Project Directory Structure
 
 ```
 openproject-mcp/
 ├── docs/
 │   ├── ARCHITECTURE.md          # System architecture and specifications
-│   └── DECISIONS.md             # Architecture Decision Records (ADR)
+│   ├── DECISIONS.md             # Architecture Decision Records (ADR)
+│   └── TODO.md                  # Task tracking and roadmap
 ├── src/
 │   ├── index.ts                 # CLI entry point and startup
 │   ├── server.ts                # MCP server instance & tool registration
+│   ├── context.ts               # RequestContext & AsyncLocalStorage
 │   ├── client/
 │   │   ├── api-client.ts        # OpenProject REST API v3 HTTP client
 │   │   ├── hal-parser.ts        # HAL+JSON parsing and transformation
@@ -174,9 +222,9 @@ openproject-mcp/
 
 ---
 
-## 7. Future Roadmap
+## 8. Future Roadmap
 
-- **Phase 1 (Current)**: Read/browse capability for projects, work packages, queries, and taxonomies.
+- **Phase 1 (Current)**: Read/browse capability for projects, work packages, queries, and taxonomies with request-scoped context.
 - **Phase 2**: Mutating operations (create/update work packages, add comments, log time).
 - **Phase 3**: Attachment inspection and download resources.
-- **Phase 4**: SSE / Stream transport for remote server deployments and multi-user environments.
+- **Phase 4**: SSE / Stream transport for remote multi-user server deployments.
