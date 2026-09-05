@@ -5,9 +5,20 @@ import {
   registerTool,
   type ToolDefinition,
 } from "../src/tools/common";
+import {
+  listProjectsShape,
+  handleListProjects,
+  getProjectShape,
+  handleGetProject,
+  projectTools,
+  registerProjectTools,
+} from "../src/tools/projects";
 import { OpenProjectNotFoundError } from "../src/client/errors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { runWithContext } from "../src/context";
+import type { OpenProjectClient } from "../src/client/api-client";
+
 
 describe("Tool Utilities", () => {
   test("formatToolSuccess formats data into MCP text response", () => {
@@ -121,3 +132,141 @@ describe("Tool Utilities", () => {
     expect(JSON.parse(executionResult?.content[0]?.text ?? "{}")).toEqual({ ok: true });
   });
 });
+
+describe("Project Tools", () => {
+  const dummyClient = {
+    get: async (path: string) => {
+      if (path === "projects/4" || path === "/api/v3/projects/4") {
+        return {
+          id: 4,
+          identifier: "mcp-test-project",
+          name: "MCP Test Project",
+          active: true,
+          public: false,
+          description: { raw: "Desc", html: "<p>Desc</p>" },
+          createdAt: "2026-09-01T00:00:00Z",
+          updatedAt: "2026-09-01T00:00:00Z",
+          _links: { self: { href: "/api/v3/projects/4" } },
+        };
+      }
+      return {
+        _embedded: {
+          elements: [
+            {
+              id: 4,
+              identifier: "mcp-test-project",
+              name: "MCP Test Project",
+              active: true,
+              public: false,
+              createdAt: "2026-09-01T00:00:00Z",
+              updatedAt: "2026-09-01T00:00:00Z",
+              _links: { self: { href: "/api/v3/projects/4" } },
+            },
+          ],
+        },
+        total: 1,
+        count: 1,
+        pageSize: 20,
+        offset: 1,
+      };
+    },
+  } as unknown as OpenProjectClient;
+
+  test("listProjects validates schema and executes successfully", async () => {
+    const schema = z.object(listProjectsShape);
+    const parsed = schema.parse({ pageSize: 10, offset: 1 });
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListProjects(parsed)
+    );
+
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.projects).toHaveLength(1);
+    expect(result.projects[0].id).toBe(4);
+    expect(result.total).toBe(1);
+  });
+
+  test("listProjects handles raw JSON string filters", async () => {
+    const schema = z.object(listProjectsShape);
+    const parsed = schema.parse({
+      filters: JSON.stringify([{ active: { operator: "=", values: ["t"] } }]),
+    });
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListProjects(parsed)
+    );
+
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.projects).toHaveLength(1);
+  });
+
+  test("listProjects rejects invalid schema arguments", () => {
+    const schema = z.object(listProjectsShape);
+    expect(() => schema.parse({ pageSize: 500 })).toThrow();
+    expect(() => schema.parse({ pageSize: -5 })).toThrow();
+    expect(() => schema.parse({ offset: 0 })).toThrow();
+  });
+
+  test("handleListProjects catches JSON parsing errors and returns error response", async () => {
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListProjects({ filters: "{invalid-json" })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Error");
+  });
+
+  test("getProject validates schema and retrieves single project", async () => {
+    const schema = z.object(getProjectShape);
+    const parsed = schema.parse({ projectId: 4 });
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleGetProject(parsed)
+    );
+
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.id).toBe(4);
+    expect(result.identifier).toBe("mcp-test-project");
+  });
+
+  test("getProject catches errors and formats error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Network timeout");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleGetProject({ projectId: 999 })
+    );
+
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Network timeout");
+  });
+
+  test("registerProjectTools registers tools on McpServer", () => {
+    const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
+    registerProjectTools(server);
+
+    expect(projectTools).toHaveLength(2);
+    expect(projectTools.map((t) => t.name)).toEqual([
+      "openproject_list_projects",
+      "openproject_get_project",
+    ]);
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<string, unknown>;
+      }
+    )._registeredTools;
+
+    expect(registeredTools["openproject_list_projects"]).toBeDefined();
+    expect(registeredTools["openproject_get_project"]).toBeDefined();
+  });
+});
+
+
