@@ -183,3 +183,25 @@ Adopt a **fixture-driven test strategy**:
   - Safe regression detection when updating normalizers or tool handlers.
 - **Negative**:
   - Fixtures must be periodically verified when targeting major new OpenProject versions.
+
+---
+
+## ADR-009: Target OpenProject 17 as Primary Runtime and Test Environment
+
+### Status
+Accepted
+
+### Context
+OpenProject 17 is the current major stable release, featuring optimized container images (`17-slim`, ~410MB), modern Rails 7.x foundations, updated API v3 behaviors, and streamlined dependency footprints.
+
+### Decision
+Target **OpenProject 17** (`openproject/openproject:17-slim`) for all containerized local development stacks, automated seeding scripts, and live integration testing environments.
+
+### Consequences
+- **Positive**:
+  - Aligns MCP server features with the current active OpenProject release.
+  - Much smaller docker image download footprint compared to older releases (~410MB vs ~865MB).
+  - Ensured compatibility with the latest API v3 specifications and authentication mechanics.
+- **Negative**:
+  - Ensures we adhere to OpenProject 17's specific cache configuration and host name variables.
+
