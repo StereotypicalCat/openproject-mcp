@@ -142,6 +142,93 @@ describe("Projects Service", () => {
     expect(result.parentName).toBe("Parent Project");
   });
 
+  test("getProject encodes URI component in id or identifier parameter", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(JSON.stringify(sampleProjectHal), {
+        headers: { "Content-Type": "application/hal+json" },
+      });
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    await getProject("special slug/test", client);
+    expect(requestedUrl).toContain("/api/v3/projects/special%20slug%2Ftest");
+  });
+
+  test("listProjects serializes filters parameter to JSON query string", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 10,
+          offset: 1,
+          _embedded: { elements: [sampleProjectHal] },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const filters = [{ active: { operator: "=", values: ["t"] } }];
+    await listProjects({ filters }, client);
+
+    expect(requestedUrl).toContain("/api/v3/projects");
+    expect(requestedUrl).toContain("filters=");
+    const decodedUrl = decodeURIComponent(requestedUrl);
+    expect(decodedUrl).toContain(JSON.stringify(filters));
+  });
+
+  test("listProjects resolves ambient client from RequestContext when client is omitted", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 10,
+          offset: 1,
+          _embedded: { elements: [sampleProjectHal] },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const ambientClient = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "ambient-key",
+      fetchFn: mockFetch,
+    });
+
+    const context: RequestContext = {
+      client: ambientClient,
+      isReadOnly: false,
+    };
+
+    const result = await runWithContext(context, async () => {
+      return listProjects();
+    });
+
+    expect(requestedUrl).toContain("/api/v3/projects");
+    expect(result.total).toBe(1);
+  });
+
   test("getProjectSchema retrieves project schema definition", async () => {
     const mockFetch = async () => {
       return new Response(JSON.stringify({ _type: "Schema", name: { type: "String" } }), {
@@ -467,6 +554,33 @@ describe("Metadata Service", () => {
     expect(types[0].name).toBe("Task");
   });
 
+  test("listTypes fetches global types when projectId is omitted", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          _embedded: {
+            elements: [{ id: 1, name: "Task", isMilestone: false }],
+          },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const types = await listTypes(undefined, client);
+    expect(requestedUrl).toContain("/api/v3/types");
+    expect(requestedUrl).not.toContain("/projects/");
+    expect(types[0].name).toBe("Task");
+  });
+
   test("listPriorities retrieves priority items", async () => {
     const mockFetch = async () => {
       return new Response(
@@ -574,6 +688,7 @@ describe("Live Container Integration (Domain Services)", () => {
     expect(queries.items.length).toBeGreaterThan(0);
 
     const activeQuery = queries.items.find((q) => q.name.includes("MCP Active Tasks"));
+    expect(activeQuery).toBeDefined();
     if (activeQuery) {
       const detail = await domainServices.getQuery(activeQuery.id, client);
       expect(detail.id).toBe(activeQuery.id);

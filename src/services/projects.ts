@@ -54,7 +54,9 @@ export async function getProject(
   client?: OpenProjectClient
 ): Promise<ProjectDetail> {
   const opClient = resolveClient(client);
-  const response = await opClient.get<HalResource>(`projects/${idOrIdentifier}`);
+  const response = await opClient.get<HalResource>(
+    `projects/${encodeURIComponent(String(idOrIdentifier))}`
+  );
   return normalizeProject(response);
 }
 
