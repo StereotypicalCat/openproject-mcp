@@ -19,6 +19,7 @@ export class OpenProjectError extends Error {
   readonly statusCode?: number;
   readonly errorIdentifier?: string;
   readonly details?: unknown;
+  readonly code: string;
 
   constructor(
     message: string,
@@ -27,6 +28,7 @@ export class OpenProjectError extends Error {
       errorIdentifier?: string;
       details?: unknown;
       cause?: unknown;
+      code?: string;
     }
   ) {
     super(message);
@@ -34,6 +36,7 @@ export class OpenProjectError extends Error {
     this.statusCode = options?.statusCode;
     this.errorIdentifier = options?.errorIdentifier;
     this.details = options?.details;
+    this.code = options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_ERROR";
     if (options?.cause) {
       this.cause = options.cause;
     }
@@ -41,36 +44,51 @@ export class OpenProjectError extends Error {
 }
 
 export class OpenProjectAuthenticationError extends OpenProjectError {
-  constructor(message = "Authentication failed. Please check your OpenProject API key.", options?: { errorIdentifier?: string; details?: unknown; cause?: unknown }) {
-    super(message, { statusCode: 401, ...options });
+  constructor(
+    message = "Authentication failed. Please check your OpenProject API key.",
+    options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
+  ) {
+    super(message, { statusCode: 401, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_AUTH_ERROR", ...options });
     this.name = "OpenProjectAuthenticationError";
   }
 }
 
 export class OpenProjectForbiddenError extends OpenProjectError {
-  constructor(message = "Access forbidden. You do not have permission to access this resource.", options?: { errorIdentifier?: string; details?: unknown; cause?: unknown }) {
-    super(message, { statusCode: 403, ...options });
+  constructor(
+    message = "Access forbidden. You do not have permission to access this resource.",
+    options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
+  ) {
+    super(message, { statusCode: 403, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_FORBIDDEN", ...options });
     this.name = "OpenProjectForbiddenError";
   }
 }
 
 export class OpenProjectNotFoundError extends OpenProjectError {
-  constructor(message = "Resource not found.", options?: { errorIdentifier?: string; details?: unknown; cause?: unknown }) {
-    super(message, { statusCode: 404, ...options });
+  constructor(
+    message = "Resource not found.",
+    options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
+  ) {
+    super(message, { statusCode: 404, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_NOT_FOUND", ...options });
     this.name = "OpenProjectNotFoundError";
   }
 }
 
 export class OpenProjectConflictError extends OpenProjectError {
-  constructor(message = "Conflict updating resource. Lock version mismatch.", options?: { errorIdentifier?: string; details?: unknown; cause?: unknown }) {
-    super(message, { statusCode: 409, ...options });
+  constructor(
+    message = "Conflict updating resource. Lock version mismatch.",
+    options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
+  ) {
+    super(message, { statusCode: 409, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_CONFLICT", ...options });
     this.name = "OpenProjectConflictError";
   }
 }
 
 export class OpenProjectValidationError extends OpenProjectError {
-  constructor(message = "Validation failed for request data.", options?: { errorIdentifier?: string; details?: unknown; cause?: unknown }) {
-    super(message, { statusCode: 422, ...options });
+  constructor(
+    message = "Validation failed for request data.",
+    options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
+  ) {
+    super(message, { statusCode: 422, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_VALIDATION_ERROR", ...options });
     this.name = "OpenProjectValidationError";
   }
 }
@@ -78,23 +96,32 @@ export class OpenProjectValidationError extends OpenProjectError {
 export class OpenProjectRateLimitError extends OpenProjectError {
   readonly retryAfter?: number;
 
-  constructor(message = "Rate limit exceeded. Please wait before retrying.", options?: { retryAfter?: number; errorIdentifier?: string; details?: unknown; cause?: unknown }) {
-    super(message, { statusCode: 429, ...options });
+  constructor(
+    message = "Rate limit exceeded. Please wait before retrying.",
+    options?: { retryAfter?: number; errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
+  ) {
+    super(message, { statusCode: 429, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_RATE_LIMIT", ...options });
     this.name = "OpenProjectRateLimitError";
     this.retryAfter = options?.retryAfter;
   }
 }
 
 export class OpenProjectServerError extends OpenProjectError {
-  constructor(message = "OpenProject internal server error.", options?: { statusCode?: number; errorIdentifier?: string; details?: unknown; cause?: unknown }) {
-    super(message, { statusCode: options?.statusCode ?? 500, ...options });
+  constructor(
+    message = "OpenProject internal server error.",
+    options?: { statusCode?: number; errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
+  ) {
+    super(message, { statusCode: options?.statusCode ?? 500, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_SERVER_ERROR", ...options });
     this.name = "OpenProjectServerError";
   }
 }
 
 export class OpenProjectNetworkError extends OpenProjectError {
-  constructor(message = "Network error connecting to OpenProject instance.", options?: { cause?: unknown }) {
-    super(message, options);
+  constructor(
+    message = "Network error connecting to OpenProject instance.",
+    options?: { cause?: unknown; code?: string }
+  ) {
+    super(message, { code: options?.code ?? "OPENPROJECT_NETWORK_ERROR", ...options });
     this.name = "OpenProjectNetworkError";
   }
 }
