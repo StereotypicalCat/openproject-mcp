@@ -36,9 +36,21 @@ describe("Tool Utilities", () => {
     expect(response.content[0]?.text).toContain("unexpected failure string");
   });
 
-  test("registerTool registers tool with parameters on McpServer", () => {
+  test("OpenProjectNotFoundError retains OPENPROJECT_NOT_FOUND code when errorIdentifier is provided", () => {
+    const error = new OpenProjectNotFoundError("Project 99 not found", {
+      errorIdentifier: "urn:openproject-org:api:v3:errors:NotFound",
+    });
+    expect(error.code).toBe("OPENPROJECT_NOT_FOUND");
+    expect(error.errorIdentifier).toBe("urn:openproject-org:api:v3:errors:NotFound");
+
+    const response = formatToolError(error);
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toBe("Error [OPENPROJECT_NOT_FOUND]: Project 99 not found");
+  });
+
+  test("registerTool registers tool with parameters on McpServer", async () => {
     const server = new McpServer({ name: "test-server", version: "1.0.0" });
-    const tool: ToolDefinition<{ id: z.ZodNumber }> = {
+    const tool: ToolDefinition<{ id: z.ZodNumber }, { id: number }> = {
       name: "test_tool_with_params",
       description: "A test tool with parameters",
       parameters: { id: z.number() },
@@ -47,10 +59,33 @@ describe("Tool Utilities", () => {
     };
 
     registerTool(server, tool);
-    expect(tool.name).toBe("test_tool_with_params");
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<
+          string,
+          {
+            description?: string;
+            handler: (args: Record<string, unknown>) => Promise<{
+              content: Array<{ type: string; text: string }>;
+              isError?: boolean;
+            }>;
+          }
+        >;
+      }
+    )._registeredTools;
+
+    const registered = registeredTools[tool.name];
+    expect(registered).toBeDefined();
+    expect(registered?.description).toBe("A test tool with parameters");
+
+    const executionResult = await registered?.handler({ id: 21 });
+    expect(executionResult).toBeDefined();
+    expect(executionResult?.isError).toBeUndefined();
+    expect(JSON.parse(executionResult?.content[0]?.text ?? "{}")).toEqual({ doubled: 42 });
   });
 
-  test("registerTool registers parameterless tool on McpServer", () => {
+  test("registerTool registers parameterless tool on McpServer", async () => {
     const server = new McpServer({ name: "test-server", version: "1.0.0" });
     const tool: ToolDefinition = {
       name: "test_tool_no_params",
@@ -60,6 +95,29 @@ describe("Tool Utilities", () => {
     };
 
     registerTool(server, tool);
-    expect(tool.name).toBe("test_tool_no_params");
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<
+          string,
+          {
+            description?: string;
+            handler: (args: Record<string, unknown>) => Promise<{
+              content: Array<{ type: string; text: string }>;
+              isError?: boolean;
+            }>;
+          }
+        >;
+      }
+    )._registeredTools;
+
+    const registered = registeredTools[tool.name];
+    expect(registered).toBeDefined();
+    expect(registered?.description).toBe("A test tool without parameters");
+
+    const executionResult = await registered?.handler({});
+    expect(executionResult).toBeDefined();
+    expect(executionResult?.isError).toBeUndefined();
+    expect(JSON.parse(executionResult?.content[0]?.text ?? "{}")).toEqual({ ok: true });
   });
 });

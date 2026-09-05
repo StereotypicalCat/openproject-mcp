@@ -53,25 +53,31 @@ export function formatToolError(error: unknown): McpToolResponse {
 /**
  * Definition interface for OpenProject MCP tools.
  */
-export interface ToolDefinition<TShape extends ZodRawShape = ZodRawShape> {
+export interface ToolDefinition<
+  TShape extends ZodRawShape = ZodRawShape,
+  TArgs = Record<string, unknown>,
+> {
   name: string;
   description: string;
   parameters?: TShape;
   readOnly: boolean;
-  execute: (args: any) => Promise<McpToolResponse>;
+  execute: (args: TArgs) => Promise<McpToolResponse>;
 }
 
 /**
  * Registers a ToolDefinition instance on an McpServer instance.
  */
-export function registerTool(server: McpServer, tool: ToolDefinition<any>): void {
+export function registerTool<
+  TShape extends ZodRawShape = ZodRawShape,
+  TArgs = Record<string, unknown>,
+>(server: McpServer, tool: ToolDefinition<TShape, TArgs>): void {
   if (tool.parameters) {
-    server.tool(tool.name, tool.description, tool.parameters, async (args: any) => {
-      return tool.execute(args);
+    server.tool(tool.name, tool.description, tool.parameters, async (args) => {
+      return tool.execute(args as unknown as TArgs);
     });
   } else {
     server.tool(tool.name, tool.description, async () => {
-      return tool.execute({});
+      return tool.execute({} as unknown as TArgs);
     });
   }
 }

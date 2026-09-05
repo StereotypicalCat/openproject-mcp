@@ -48,7 +48,7 @@ export class OpenProjectAuthenticationError extends OpenProjectError {
     message = "Authentication failed. Please check your OpenProject API key.",
     options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
   ) {
-    super(message, { statusCode: 401, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_AUTH_ERROR", ...options });
+    super(message, { statusCode: 401, code: options?.code ?? "OPENPROJECT_AUTH_ERROR", ...options });
     this.name = "OpenProjectAuthenticationError";
   }
 }
@@ -58,7 +58,7 @@ export class OpenProjectForbiddenError extends OpenProjectError {
     message = "Access forbidden. You do not have permission to access this resource.",
     options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
   ) {
-    super(message, { statusCode: 403, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_FORBIDDEN", ...options });
+    super(message, { statusCode: 403, code: options?.code ?? "OPENPROJECT_FORBIDDEN", ...options });
     this.name = "OpenProjectForbiddenError";
   }
 }
@@ -68,7 +68,7 @@ export class OpenProjectNotFoundError extends OpenProjectError {
     message = "Resource not found.",
     options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
   ) {
-    super(message, { statusCode: 404, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_NOT_FOUND", ...options });
+    super(message, { statusCode: 404, code: options?.code ?? "OPENPROJECT_NOT_FOUND", ...options });
     this.name = "OpenProjectNotFoundError";
   }
 }
@@ -78,7 +78,7 @@ export class OpenProjectConflictError extends OpenProjectError {
     message = "Conflict updating resource. Lock version mismatch.",
     options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
   ) {
-    super(message, { statusCode: 409, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_CONFLICT", ...options });
+    super(message, { statusCode: 409, code: options?.code ?? "OPENPROJECT_CONFLICT", ...options });
     this.name = "OpenProjectConflictError";
   }
 }
@@ -88,7 +88,7 @@ export class OpenProjectValidationError extends OpenProjectError {
     message = "Validation failed for request data.",
     options?: { errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
   ) {
-    super(message, { statusCode: 422, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_VALIDATION_ERROR", ...options });
+    super(message, { statusCode: 422, code: options?.code ?? "OPENPROJECT_VALIDATION_ERROR", ...options });
     this.name = "OpenProjectValidationError";
   }
 }
@@ -100,7 +100,7 @@ export class OpenProjectRateLimitError extends OpenProjectError {
     message = "Rate limit exceeded. Please wait before retrying.",
     options?: { retryAfter?: number; errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
   ) {
-    super(message, { statusCode: 429, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_RATE_LIMIT", ...options });
+    super(message, { statusCode: 429, code: options?.code ?? "OPENPROJECT_RATE_LIMIT", ...options });
     this.name = "OpenProjectRateLimitError";
     this.retryAfter = options?.retryAfter;
   }
@@ -111,7 +111,7 @@ export class OpenProjectServerError extends OpenProjectError {
     message = "OpenProject internal server error.",
     options?: { statusCode?: number; errorIdentifier?: string; details?: unknown; cause?: unknown; code?: string }
   ) {
-    super(message, { statusCode: options?.statusCode ?? 500, code: options?.code ?? options?.errorIdentifier ?? "OPENPROJECT_SERVER_ERROR", ...options });
+    super(message, { statusCode: options?.statusCode ?? 500, code: options?.code ?? "OPENPROJECT_SERVER_ERROR", ...options });
     this.name = "OpenProjectServerError";
   }
 }
