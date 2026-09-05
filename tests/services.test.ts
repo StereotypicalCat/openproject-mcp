@@ -6,6 +6,7 @@ import {
   getWorkPackage,
   searchWorkPackages,
 } from "../src/services/work-packages.ts";
+import { listQueries, getQuery, getQueryResults } from "../src/services/queries.ts";
 import { OpenProjectClient } from "../src/client/api-client.ts";
 import { runWithContext, type RequestContext } from "../src/context.ts";
 
@@ -250,4 +251,135 @@ describe("Work Packages Service", () => {
   });
 });
 
+describe("Queries Service", () => {
+  const sampleQueryHal = {
+    _type: "Query",
+    id: 30,
+    name: "MCP Active Tasks",
+    public: true,
+    starred: false,
+    _links: {
+      self: { href: "/api/v3/queries/30", title: "MCP Active Tasks" },
+      project: { href: "/api/v3/projects/4", title: "MCP Test Project" },
+      results: { href: "/api/v3/queries/30/results" },
+      columns: [
+        { href: "/api/v3/queries/columns/id", title: "ID" },
+        { href: "/api/v3/queries/columns/subject", title: "Subject" },
+        { href: "/api/v3/queries/columns/status", title: "Status" },
+      ],
+      sortBy: [
+        { href: "/api/v3/queries/sort_bys/id-asc", title: "ID ascending" },
+      ],
+    },
+    filters: [
+      {
+        _links: {
+          operator: { href: "/api/v3/queries/operators/=", title: "is" },
+          filter: { href: "/api/v3/queries/filters/status", title: "Status" },
+        },
+        name: "status",
+        values: ["open"],
+      },
+    ],
+  };
 
+  test("listQueries filters by project when provided", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 20,
+          offset: 1,
+          _embedded: { elements: [sampleQueryHal] },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const result = await listQueries({ projectId: 4, pageSize: 20 }, client);
+    expect(requestedUrl).toContain("/api/v3/queries");
+    expect(requestedUrl).toContain("pageSize=20");
+    const decodedUrl = decodeURIComponent(requestedUrl);
+    expect(decodedUrl).toContain('"project"');
+    expect(result.items[0].id).toBe(30);
+    expect(result.items[0].name).toBe("MCP Active Tasks");
+    expect(result.items[0].projectId).toBe(4);
+  });
+
+  test("getQuery returns normalized details with columns and filters", async () => {
+    const mockFetch = async () => {
+      return new Response(JSON.stringify(sampleQueryHal), {
+        headers: { "Content-Type": "application/hal+json" },
+      });
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const query = await getQuery(30, client);
+    expect(query.id).toBe(30);
+    expect(query.name).toBe("MCP Active Tasks");
+    expect(query.columns).toContain("ID");
+    expect(query.columns).toContain("Subject");
+    expect(query.sortBy?.[0].attribute).toBe("id");
+    expect(query.sortBy?.[0].direction).toBe("asc");
+    expect(query.filters?.[0].field).toBe("Status");
+    expect(query.resultsHref).toBe("/api/v3/queries/30/results");
+  });
+
+  test("getQueryResults fetches work packages produced by saved query", async () => {
+    let requestedUrl = "";
+    const mockFetch = async (input: string | URL | Request) => {
+      requestedUrl = String(input);
+      return new Response(
+        JSON.stringify({
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 10,
+          offset: 1,
+          _embedded: {
+            elements: [
+              {
+                _type: "WorkPackage",
+                id: 38,
+                subject: "Implement MCP Server Core Protocol",
+                _links: {
+                  self: { href: "/api/v3/work_packages/38" },
+                  type: { title: "Task" },
+                  status: { title: "In progress" },
+                },
+              },
+            ],
+          },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const client = new OpenProjectClient({
+      baseUrl: "http://example.com",
+      apiKey: "test-key",
+      fetchFn: mockFetch,
+    });
+
+    const result = await getQueryResults(30, { pageSize: 10 }, client);
+    expect(requestedUrl).toContain("/api/v3/queries/30/results");
+    expect(requestedUrl).toContain("pageSize=10");
+    expect(result.items[0].id).toBe(38);
+    expect(result.items[0].subject).toBe("Implement MCP Server Core Protocol");
+  });
+});
