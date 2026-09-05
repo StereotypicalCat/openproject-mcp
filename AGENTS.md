@@ -20,6 +20,8 @@ Welcome to the `openproject-mcp` project. This document defines operating princi
 2. **Document Architectural Decisions**: If a change alters the design, dependencies, or interfaces, record a new entry or update existing records in [docs/DECISIONS.md](file:///home/user/openproject-mcp/docs/DECISIONS.md).
 3. **Preserve Repository Integrity**: Do not delete existing comments, licenses, or configuration files unless specifically tasked with refactoring them.
 4. **Security by Design**: Never log or commit credentials, API tokens, or session secrets.
+5. **Never Continue Automatically**: Never proceed automatically to the next task or phase. Always stop and check in with the user after completing a task, outline the next logical step, and await explicit approval.
+6. **Maintain Task Tracking**: Keep [docs/TODO.md](file:///home/user/openproject-mcp/docs/TODO.md) updated with completed items and next steps after every milestone.
 
 ---
 

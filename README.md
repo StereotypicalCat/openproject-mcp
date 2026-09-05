@@ -22,6 +22,7 @@ It allows agents to browse, query, and reason about OpenProject workspaces using
 - [AGENTS.md](AGENTS.md): Guidelines, coding standards, and workflow instructions for AI coding agents.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): System architecture, layer diagrams, tool schemas, and technical design.
 - [docs/DECISIONS.md](docs/DECISIONS.md): Architectural Decision Records (ADRs) documenting stack choices, protocols, and designs.
+- [docs/TODO.md](docs/TODO.md): Task tracking, roadmap, and agent check-in policies.
 
 ---
 
