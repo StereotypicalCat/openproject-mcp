@@ -52,10 +52,8 @@ OPENPROJECT_API_KEY=${API_KEY}
 OPENPROJECT_TEST_PROJECT=${PROJECT_IDENTIFIER}
 EOF
 
-# Also update .env.local if not present or populate key
-if [ ! -f "${ROOT_DIR}/.env.local" ]; then
-  cp "${ROOT_DIR}/.env.test" "${ROOT_DIR}/.env.local"
-fi
+# Also update .env.local
+cp "${ROOT_DIR}/.env.test" "${ROOT_DIR}/.env.local"
 
 echo ""
 echo "[seed.sh] Success! Test environment configured."

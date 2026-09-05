@@ -2,7 +2,7 @@
  * Queries Domain Service.
  */
 
-import type { OpenProjectClient } from "../client/api-client.ts";
+import { OpenProjectNotFoundError, type OpenProjectClient } from "../client/api-client.ts";
 import {
   normalizeQuery,
   normalizeQuerySummary,
@@ -17,7 +17,7 @@ import type {
   QuerySummary,
   WorkPackageSummary,
 } from "../client/types.ts";
-import { resolveClient } from "./helper.ts";
+import { resolveClient, resolveProjectId } from "./helper.ts";
 
 export interface ListQueriesParams {
   projectId?: number | string;
@@ -43,9 +43,10 @@ export async function listQueries(
   if (params?.pageSize !== undefined) query.pageSize = params.pageSize;
   if (params?.offset !== undefined) query.offset = params.offset;
 
-  if (params?.projectId !== undefined) {
+  if (params?.projectId !== undefined && params.projectId !== "") {
+    const numericProjectId = await resolveProjectId(params.projectId, opClient);
     query.filters = JSON.stringify([
-      { project: { operator: "=", values: [String(params.projectId)] } },
+      { project: { operator: "=", values: [String(numericProjectId)] } },
     ]);
   }
 
@@ -79,9 +80,22 @@ export async function getQueryResults(
   if (params?.pageSize !== undefined) query.pageSize = params.pageSize;
   if (params?.offset !== undefined) query.offset = params.offset;
 
-  const response = await opClient.get<HalCollection<HalResource>>(
-    `queries/${id}/results`,
-    query
-  );
-  return unpackCollection(response, normalizeWorkPackageSummary);
+  try {
+    const response = await opClient.get<HalCollection<HalResource>>(
+      `queries/${id}/results`,
+      query
+    );
+    return unpackCollection(response, normalizeWorkPackageSummary);
+  } catch (err) {
+    if (err instanceof OpenProjectNotFoundError) {
+      // In OpenProject API v3, query results endpoint is dynamically linked in query._links.results.href
+      const queryDetail = await opClient.get<HalResource>(`queries/${id}`);
+      const resultsHref = queryDetail._links?.results?.href;
+      if (typeof resultsHref === "string" && resultsHref.length > 0) {
+        const response = await opClient.get<HalCollection<HalResource>>(resultsHref, query);
+        return unpackCollection(response, normalizeWorkPackageSummary);
+      }
+    }
+    throw err;
+  }
 }

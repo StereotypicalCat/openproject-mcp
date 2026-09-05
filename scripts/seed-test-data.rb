@@ -32,6 +32,7 @@ test_project.description = 'Dedicated test project for openproject-mcp companion
 test_project.public = true
 test_project.workspace_type = 'project' if test_project.respond_to?(:workspace_type=)
 test_project.types = Type.all if Type.any?
+test_project.enabled_module_names = OpenProject::AccessControl.available_project_modules if defined?(OpenProject::AccessControl)
 test_project.save!(validate: false)
 puts "[Seeder] Ensured project 'MCP Test Project' (ID: #{test_project.id}, identifier: #{test_project.identifier})."
 

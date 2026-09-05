@@ -17,7 +17,7 @@ import type {
   WorkPackageFilterParams,
   WorkPackageSummary,
 } from "../client/types.ts";
-import { resolveClient } from "./helper.ts";
+import { resolveClient, resolveProjectId } from "./helper.ts";
 
 export interface ListWorkPackagesParams extends WorkPackageFilterParams {
   pageSize?: number;
@@ -46,7 +46,12 @@ export async function listWorkPackages(
   if (params?.sortBy !== undefined) query.sortBy = params.sortBy;
 
   if (params) {
-    const filters = buildWorkPackageFilters(params);
+    let filterParams = params;
+    if (params.projectId !== undefined && params.projectId !== "") {
+      const numericProjectId = await resolveProjectId(params.projectId, opClient);
+      filterParams = { ...params, projectId: numericProjectId };
+    }
+    const filters = buildWorkPackageFilters(filterParams);
     if (filters.length > 0) {
       query.filters = JSON.stringify(filters);
     }
