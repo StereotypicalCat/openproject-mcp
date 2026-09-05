@@ -599,7 +599,7 @@ git commit -m "feat(services): implement work packages domain service"
   - `getQueryResults(id: number, params?: QueryResultsParams, client?: OpenProjectClient): Promise<PaginatedResult<WorkPackageSummary>>`
   - `ListQueriesParams`, `QueryResultsParams` interfaces
 
-- [ ] **Step 1: Write failing tests for queries service**
+- [x] **Step 1: Write failing tests for queries service**
 
 Append to `tests/services.test.ts`:
 ```typescript
@@ -739,12 +739,12 @@ describe("Queries Service", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/services.test.ts`
 Expected: FAIL with module not found `../src/services/queries.ts`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `src/services/queries.ts`:
 ```typescript
@@ -837,12 +837,12 @@ export async function getQueryResults(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/services.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/queries.ts tests/services.test.ts
@@ -872,7 +872,7 @@ git commit -m "feat(services): implement queries domain service"
   - `ListTypesParams`, `ListUsersParams` interfaces
   - Barrel exports in `src/services/index.ts`
 
-- [ ] **Step 1: Write failing tests for metadata service**
+- [x] **Step 1: Write failing tests for metadata service**
 
 Append to `tests/services.test.ts`:
 ```typescript
@@ -1009,12 +1009,12 @@ describe("Metadata Service", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/services.test.ts`
 Expected: FAIL with module not found `../src/services/metadata.ts`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `src/services/metadata.ts`:
 ```typescript
@@ -1121,12 +1121,12 @@ export * from "./queries.ts";
 export * from "./metadata.ts";
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/services.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/metadata.ts src/services/index.ts tests/services.test.ts
@@ -1145,7 +1145,7 @@ git commit -m "feat(services): implement metadata domain service and barrel expo
 - Consumes: All services from `src/services/index.ts`
 - Produces: Live validation suite against OpenProject 17 docker container
 
-- [ ] **Step 1: Write live integration test suite**
+- [x] **Step 1: Write live integration test suite**
 
 In `tests/services.test.ts`, add live integration tests that run when local OpenProject container is reachable:
 ```typescript
@@ -1214,16 +1214,16 @@ describe("Live Container Integration (Domain Services)", () => {
 });
 ```
 
-- [ ] **Step 2: Run full test suite to verify all tests pass**
+- [x] **Step 2: Run full test suite to verify all tests pass**
 
 Run: `bun test`
 Expected: PASS (All tests in client.test.ts, smoke.test.ts, and services.test.ts pass)
 
-- [ ] **Step 3: Update `docs/TODO.md`**
+- [x] **Step 3: Update `docs/TODO.md`**
 
 Update `docs/TODO.md` to mark Task 2 items completed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/services.test.ts docs/TODO.md
