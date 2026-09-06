@@ -7,3 +7,4 @@ export * from "./projects.ts";
 export * from "./work-packages.ts";
 export * from "./queries.ts";
 export * from "./metadata.ts";
+export * from "./openapi.ts";
