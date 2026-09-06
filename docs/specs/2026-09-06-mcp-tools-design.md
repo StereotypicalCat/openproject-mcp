@@ -54,6 +54,12 @@ Per ADR-003 and ADR-004, tool handlers do NOT store global client references. In
 ### 2.3 Read-Only Safety
 All Phase 1 tools are read-only (`readOnly: true`). When `OPENPROJECT_READ_ONLY=true` or `--read-only` is active, read-only tools remain accessible while mutating tools (in Phase 2) are filtered out and rejected with `SERVER_READ_ONLY`.
 
+### 2.4 OpenAPI Specification Support
+OpenProject REST API v3 publishes a comprehensive, machine-readable OpenAPI 3.0 specification at `/api/v3/openapi.json`.
+The MCP server architecture mandates first-class support for OpenAPI:
+1. **Dynamic Schema Introspection**: Provide capability to fetch and query OpenProject's OpenAPI 3.0 specification so LLM agents can dynamically discover available endpoints, parameters, allowed filter operations, and custom field constraints.
+2. **OpenAPI / JSON Schema Compatibility**: All MCP tool schemas and parameter definitions must strictly conform to OpenAPI 3.0 / JSON Schema specifications to ensure universal interoperability with MCP clients and LLM function-calling engines.
+
 ---
 
 ## 3. Tool Specifications
@@ -123,6 +129,11 @@ All tool names are prefixed with `openproject_` using `snake_case` in accordance
 - **Parameters**:
   - `pageSize` (optional integer, 1-100, default: 20): Number of users per page.
   - `offset` (optional integer, >= 1, default: 1): Page number to retrieve.
+
+### 3.11 `openproject_get_openapi_spec`
+- **Description**: Retrieve OpenProject API v3's OpenAPI 3.0 specification (`/api/v3/openapi.json`) for dynamic schema introspection, endpoint discovery, and entity definitions.
+- **Parameters**:
+  - `path` (optional string): Specific endpoint path or tag to retrieve (e.g. `"/api/v3/work_packages"` or `"Work Packages"`) to conserve LLM context tokens, or omitted to retrieve full metadata.
 
 ---
 

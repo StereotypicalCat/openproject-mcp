@@ -584,7 +584,7 @@ git commit -m "feat(tools): implement work package tools and registration"
   - `queryTools`: ToolDefinition[]
   - `registerQueryTools(server: McpServer): void`
 
-- [ ] **Step 1: Write failing tests for query tools**
+- [x] **Step 1: Write failing tests for query tools**
 
 In `tests/tools.test.ts`:
 ```typescript
@@ -692,12 +692,12 @@ describe("Query Tools", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/tools.test.ts`
 Expected: FAIL with module `../src/tools/queries` not found.
 
-- [ ] **Step 3: Implement query tools**
+- [x] **Step 3: Implement query tools**
 
 In `src/tools/queries.ts`:
 ```typescript
@@ -765,12 +765,12 @@ export function registerQueryTools(server: McpServer): void {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/tools.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/queries.ts tests/tools.test.ts
@@ -799,7 +799,7 @@ git commit -m "feat(tools): implement query tools and registration"
   - `metadataTools`: ToolDefinition[]
   - `registerMetadataTools(server: McpServer): void`
 
-- [ ] **Step 1: Write failing tests for metadata tools**
+- [x] **Step 1: Write failing tests for metadata tools**
 
 In `tests/tools.test.ts`:
 ```typescript
@@ -919,12 +919,12 @@ describe("Metadata Tools", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/tools.test.ts`
 Expected: FAIL with module `../src/tools/metadata` not found.
 
-- [ ] **Step 3: Implement metadata tools**
+- [x] **Step 3: Implement metadata tools**
 
 In `src/tools/metadata.ts`:
 ```typescript
@@ -1028,12 +1028,12 @@ export function registerMetadataTools(server: McpServer): void {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/tools.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/metadata.ts tests/tools.test.ts
@@ -1055,7 +1055,7 @@ git commit -m "feat(tools): implement metadata tools and registration"
   - `registerAllTools(server: McpServer, options?: { readOnly?: boolean }): void`
   - Re-exports of all individual tools, shapes, and handlers
 
-- [ ] **Step 1: Write failing tests for tool registry**
+- [x] **Step 1: Write failing tests for tool registry**
 
 In `tests/tools.test.ts`:
 ```typescript
@@ -1094,12 +1094,12 @@ describe("Tool Registry", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/tools.test.ts`
 Expected: FAIL with module `../src/tools/index` not found.
 
-- [ ] **Step 3: Implement tool registry**
+- [x] **Step 3: Implement tool registry**
 
 In `src/tools/index.ts`:
 ```typescript
@@ -1140,12 +1140,12 @@ export function registerAllTools(server: McpServer, options?: RegisterToolsOptio
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/tools.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/index.ts tests/tools.test.ts
@@ -1159,12 +1159,7 @@ git commit -m "feat(tools): add tool registry and barrel export"
 **Files:**
 - Modify: `tests/tools.test.ts`
 - Modify: `docs/TODO.md`
-
-**Interfaces:**
-- Consumes: Live OpenProject 17 container on `http://localhost:8080`, `OpenProjectClient`, `runWithContext`, `allTools`
-- Produces: Live end-to-end integration tests verifying every tool against real OpenProject data.
-
-- [ ] **Step 1: Add live integration tests for all 10 tools**
+- [x] **Step 1: Add live integration tests for all 10 tools**
 
 In `tests/tools.test.ts`:
 ```typescript
@@ -1260,16 +1255,16 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
 });
 ```
 
-- [ ] **Step 2: Run all tests against live container**
+- [x] **Step 2: Run all tests against live container**
 
 Run: `bun test`
 Expected: All tests pass (client, smoke, services, tools).
 
-- [ ] **Step 3: Update `docs/TODO.md`**
+- [x] **Step 3: Update `docs/TODO.md`**
 
 Mark Task 3 as completed in `docs/TODO.md`.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/tools.test.ts docs/TODO.md

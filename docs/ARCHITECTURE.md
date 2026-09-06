@@ -141,6 +141,7 @@ The server is architected from the ground up to support concurrent, multi-user o
 | `openproject_list_statuses` | List all available work package statuses (New, In Progress, Closed, etc.) | None |
 | `openproject_list_priorities` | List all priority levels | None |
 | `openproject_list_users` | List users in the OpenProject instance | `pageSize`, `offset` |
+| `openproject_get_openapi_spec` | Retrieve OpenProject API v3 OpenAPI specification for schema introspection | `path` |
 
 ---
 
