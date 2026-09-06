@@ -274,6 +274,18 @@ In `claude_desktop_config.json` or clients connecting directly via SSE URL:
 }
 ```
 
+#### Open WebUI (Streamable HTTP)
+In Open WebUI (**Admin Panel > Settings > External Tools** or **User Settings > Tools**):
+1. Click **+** (Add Connection).
+2. Select **Type**: `MCP (Streamable HTTP)`.
+3. Set **URL**:
+   - In Docker Compose on the same network: `http://openproject-mcp:3000/mcp` (or `http://openproject-mcp:3000/sse`)
+   - From host machine: `http://localhost:3000/mcp`
+4. Set **API Key / Auth Header** (optional):
+   - If `OPENPROJECT_API_KEY` is configured in the server container environment, no key is needed in the client.
+   - For multi-user environments, pass `Bearer <your-openproject-api-key>` or append `?apiKey=<your-key>`.
+5. Click **Verify** to test connectivity and discover tools.
+
 ---
 
 ## Interactive Testing with MCP Inspector

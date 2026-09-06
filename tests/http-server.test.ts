@@ -337,6 +337,180 @@ describe("Hosted Remote MCP Server (HTTP/SSE)", () => {
     await readerB!.cancel();
   });
 
+  test("POST /sse with initialize message returns HTTP 200 with Mcp-Session-Id and serverInfo (Open WebUI compatibility)", async () => {
+    const res = await fetch(`${serverUrl}/sse?apiKey=test-streamable-key`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "*/*", // Open WebUI / httpx often sends */* or application/json
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "open-webui", version: "0.5.0" },
+        },
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    const sessionId = res.headers.get("mcp-session-id");
+    expect(sessionId).toBeTruthy();
+
+    const data = (await res.json()) as {
+      jsonrpc: string;
+      id: number;
+      result: {
+        protocolVersion: string;
+        serverInfo: { name: string; version: string };
+      };
+    };
+    expect(data.jsonrpc).toBe("2.0");
+    expect(data.id).toBe(1);
+    expect(data.result.serverInfo.name).toBe("openproject-mcp");
+
+    // Subsequent tools/list request with Mcp-Session-Id
+    const toolsRes = await fetch(`${serverUrl}/sse`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Mcp-Session-Id": sessionId!,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+
+    expect(toolsRes.status).toBe(200);
+    const toolsData = (await toolsRes.json()) as {
+      jsonrpc: string;
+      id: number;
+      result: { tools: Array<{ name: string }> };
+    };
+    expect(toolsData.id).toBe(2);
+    expect(toolsData.result.tools.length).toBeGreaterThan(0);
+    expect(
+      toolsData.result.tools.some((t) => t.name === "openproject_list_projects")
+    ).toBe(true);
+
+    // DELETE session to clean up
+    const deleteRes = await fetch(`${serverUrl}/sse`, {
+      method: "DELETE",
+      headers: {
+        "Mcp-Session-Id": sessionId!,
+      },
+    });
+    expect(deleteRes.status).toBe(204);
+
+    // Subsequent request on deleted session returns 404
+    const afterDeleteRes = await fetch(`${serverUrl}/sse`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Mcp-Session-Id": sessionId!,
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+    expect(afterDeleteRes.status).toBe(404);
+  });
+
+  test("Streamable HTTP on /mcp and / root endpoints", async () => {
+    // 1. /mcp endpoint
+    const mcpRes = await fetch(`${serverUrl}/mcp`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-mcp-path-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 10,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "test-client", version: "1.0.0" },
+        },
+      }),
+    });
+    expect(mcpRes.status).toBe(200);
+    const mcpSessionId = mcpRes.headers.get("mcp-session-id");
+    expect(mcpSessionId).toBeTruthy();
+
+    // 2. / root endpoint
+    const rootRes = await fetch(`${serverUrl}/`, {
+      method: "POST",
+      headers: {
+        "X-OpenProject-Api-Key": "test-root-path-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 20,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "test-client", version: "1.0.0" },
+        },
+      }),
+    });
+    expect(rootRes.status).toBe(200);
+    const rootSessionId = rootRes.headers.get("mcp-session-id");
+    expect(rootSessionId).toBeTruthy();
+    expect(rootSessionId).not.toBe(mcpSessionId);
+  });
+
+  test("POST /mcp without API key returns HTTP 401 Unauthorized", async () => {
+    const res = await fetch(`${serverUrl}/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "test", version: "1.0" },
+        },
+      }),
+    });
+    expect(res.status).toBe(401);
+    const data = (await res.json()) as { error: string };
+    expect(data.error).toContain("Missing OpenProject API key");
+  });
+
+  test("POST /mcp with invalid sessionId returns HTTP 404", async () => {
+    const res = await fetch(`${serverUrl}/mcp`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/json",
+        "Mcp-Session-Id": "non-existent-uuid",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/list",
+        params: {},
+      }),
+    });
+    expect(res.status).toBe(404);
+  });
+
   test("CLI entrypoint (src/index.ts) boots HTTP server when --port is provided", async () => {
     const proc = Bun.spawn(
       [

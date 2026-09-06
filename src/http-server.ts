@@ -10,6 +10,7 @@
 
 import type { Server } from "bun";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   JSONRPCMessageSchema,
@@ -36,6 +37,7 @@ export interface HttpServerInstance {
  * 1. Authorization: Bearer <key>
  * 2. X-OpenProject-Api-Key: <key>
  * 3. ?apiKey=<key> query parameter
+ * 4. Server-configured defaultApiKey fallback (single-tenant deployments)
  */
 export function extractApiKey(
   req: Request,
@@ -135,7 +137,7 @@ export class BunSseTransport implements Transport {
   }
 }
 
-interface SessionRecord {
+interface SseSessionRecord {
   sessionId: string;
   transport: BunSseTransport;
   server: McpServer;
@@ -143,17 +145,314 @@ interface SessionRecord {
   cleanup: () => Promise<void>;
 }
 
-const CORS_HEADERS = {
+interface StreamableSessionRecord {
+  sessionId: string;
+  transport: WebStandardStreamableHTTPServerTransport;
+  server: McpServer;
+  client: OpenProjectClient;
+  cleanup: () => Promise<void>;
+  lastActive: number;
+}
+
+const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-OpenProject-Api-Key",
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization, X-OpenProject-Api-Key, Mcp-Session-Id, Last-Event-ID, Mcp-Protocol-Version",
+  "Access-Control-Expose-Headers": "Mcp-Session-Id, Mcp-Protocol-Version",
 };
 
 /**
+ * Attaches CORS headers to a response if not already set.
+ */
+function withCors(response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    if (!headers.has(key)) {
+      headers.set(key, value);
+    }
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/**
+ * Normalizes an incoming Request for Streamable HTTP compliance:
+ * - Ensures Accept includes both application/json and text/event-stream (preventing 406 on clients like Open WebUI)
+ * - Propagates sessionId from query parameter to Mcp-Session-Id header if missing
+ */
+function normalizeMcpRequest(req: Request): Request {
+  const headers = new Headers(req.headers);
+  const accept = headers.get("accept") ?? "";
+  if (!accept.includes("application/json") || !accept.includes("text/event-stream")) {
+    headers.set("accept", "application/json, text/event-stream");
+  }
+  const sessionId =
+    headers.get("mcp-session-id") ??
+    new URL(req.url).searchParams.get("sessionId") ??
+    new URL(req.url).searchParams.get("mcp-session-id");
+  if (sessionId && !headers.has("mcp-session-id")) {
+    headers.set("mcp-session-id", sessionId);
+  }
+  return new Request(req, { headers });
+}
+
+/**
+ * Checks if a parsed JSON-RPC payload is or contains an initialize request.
+ */
+function isInitializeMessage(msg: unknown): boolean {
+  if (!msg || typeof msg !== "object") return false;
+  if (Array.isArray(msg)) return msg.some(isInitializeMessage);
+  return (msg as { method?: unknown }).method === "initialize";
+}
+
+/**
+ * Helper to construct an McpServer instance with all tools registered and execution wrapped in RequestContext.
+ */
+function createSessionServer(
+  config: AppConfig,
+  client: OpenProjectClient
+): McpServer {
+  const sessionServer = new McpServer({
+    name: SERVER_NAME,
+    version: SERVER_VERSION,
+  });
+
+  registerAllTools(sessionServer, {
+    readOnly: config.readOnly,
+    wrapExecute: async (fn, tool) => {
+      if (config.readOnly && !tool.readOnly) {
+        return formatToolError(
+          new OpenProjectError(
+            "Operation rejected. OpenProject MCP server is running in read-only mode.",
+            { code: "SERVER_READ_ONLY" }
+          )
+        );
+      }
+      return runWithContext(
+        { client, isReadOnly: config.readOnly },
+        fn
+      );
+    },
+  });
+
+  return sessionServer;
+}
+
+/**
  * Starts the hosted HTTP/SSE MCP server with Bun.serve.
+ * Supports both classic SSE transport (GET /sse + POST /messages) and
+ * modern Streamable HTTP transport (POST/GET/DELETE on /sse, /mcp, and /).
  */
 export async function startHttpServer(config: AppConfig): Promise<HttpServerInstance> {
-  const activeSessions = new Map<string, SessionRecord>();
+  const activeSseSessions = new Map<string, SseSessionRecord>();
+  const activeStreamableSessions = new Map<string, StreamableSessionRecord>();
+
+  // Periodically clean up inactive Streamable HTTP sessions (TTL: 1 hour)
+  const SESSION_TTL_MS = 60 * 60 * 1000;
+  const cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [, session] of activeStreamableSessions.entries()) {
+      if (now - session.lastActive > SESSION_TTL_MS) {
+        session.cleanup().catch(() => {});
+      }
+    }
+  }, 5 * 60 * 1000);
+
+  /**
+   * Handles Streamable HTTP transport requests (POST, GET, DELETE).
+   */
+  async function handleStreamableRequest(req: Request, url: URL): Promise<Response> {
+    const normReq = normalizeMcpRequest(req);
+
+    // 1. DELETE request terminates session
+    if (req.method === "DELETE") {
+      const sessionId =
+        normReq.headers.get("mcp-session-id") ?? url.searchParams.get("sessionId");
+      if (!sessionId) {
+        return withCors(
+          new Response(JSON.stringify({ error: "Missing session ID" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      const session = activeStreamableSessions.get(sessionId);
+      if (!session) {
+        return withCors(
+          new Response(JSON.stringify({ error: "Session not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      await session.cleanup();
+      return withCors(new Response(null, { status: 204 }));
+    }
+
+    // 2. GET request on session (SSE stream for server-to-client notifications)
+    if (req.method === "GET") {
+      const sessionId =
+        normReq.headers.get("mcp-session-id") ?? url.searchParams.get("sessionId");
+      if (!sessionId) {
+        return withCors(
+          new Response(
+            JSON.stringify({
+              error:
+                "Missing Mcp-Session-Id header. To initiate a Streamable HTTP session, send a POST initialize request.",
+            }),
+            {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            }
+          )
+        );
+      }
+      const session = activeStreamableSessions.get(sessionId);
+      if (!session) {
+        return withCors(
+          new Response(JSON.stringify({ error: "Session not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      session.lastActive = Date.now();
+      const res = await runWithContext(
+        { client: session.client, isReadOnly: config.readOnly },
+        () => session.transport.handleRequest(normReq)
+      );
+      return withCors(res);
+    }
+
+    if (req.method !== "POST") {
+      return withCors(
+        new Response(JSON.stringify({ error: "Method not allowed" }), {
+          status: 405,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
+
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return withCors(
+        new Response(JSON.stringify({ error: "Invalid JSON" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    }
+
+    const sessionId =
+      normReq.headers.get("mcp-session-id") ?? url.searchParams.get("sessionId");
+
+    // Existing session message (already authenticated upon initialization)
+    if (sessionId && !isInitializeMessage(body)) {
+      const session = activeStreamableSessions.get(sessionId);
+      if (!session) {
+        return withCors(
+          new Response(JSON.stringify({ error: "Session not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+      session.lastActive = Date.now();
+      const res = await runWithContext(
+        { client: session.client, isReadOnly: config.readOnly },
+        () => session.transport.handleRequest(normReq, { parsedBody: body })
+      );
+      return withCors(res);
+    }
+
+    // 3. New session initialization or stateless request requires API key
+    const apiKey = extractApiKey(req, url, config.apiKey);
+    if (!apiKey) {
+      return withCors(
+        new Response(
+          JSON.stringify({
+            error:
+              "Missing OpenProject API key. Provide via Authorization header, X-OpenProject-Api-Key header, or ?apiKey= query parameter.",
+          }),
+          {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      );
+    }
+
+    // New session initialization
+    if (isInitializeMessage(body)) {
+      const newSessionId = crypto.randomUUID();
+      const sessionClient = new OpenProjectClient({
+        baseUrl: config.baseUrl,
+        apiKey,
+      });
+      const sessionServer = createSessionServer(config, sessionClient);
+      const transport = new WebStandardStreamableHTTPServerTransport({
+        sessionIdGenerator: () => newSessionId,
+        enableJsonResponse: true,
+      });
+      await sessionServer.connect(transport);
+
+      let cleanedUp = false;
+      const cleanup = async () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
+        activeStreamableSessions.delete(newSessionId);
+        try {
+          await transport.close();
+        } catch {}
+        try {
+          await sessionServer.close();
+        } catch {}
+      };
+
+      const record: StreamableSessionRecord = {
+        sessionId: newSessionId,
+        transport,
+        server: sessionServer,
+        client: sessionClient,
+        cleanup,
+        lastActive: Date.now(),
+      };
+      activeStreamableSessions.set(newSessionId, record);
+
+      const res = await runWithContext(
+        { client: sessionClient, isReadOnly: config.readOnly },
+        () => transport.handleRequest(normReq, { parsedBody: body })
+      );
+      return withCors(res);
+    }
+
+    // Stateless fallback request (e.g. tools/list or tools/call without session ID)
+    const statelessClient = new OpenProjectClient({
+      baseUrl: config.baseUrl,
+      apiKey,
+    });
+    const statelessServer = createSessionServer(config, statelessClient);
+    const statelessTransport = new WebStandardStreamableHTTPServerTransport({
+      enableJsonResponse: true,
+    });
+    await statelessServer.connect(statelessTransport);
+    try {
+      const res = await runWithContext(
+        { client: statelessClient, isReadOnly: config.readOnly },
+        () => statelessTransport.handleRequest(normReq, { parsedBody: body })
+      );
+      return withCors(res);
+    } finally {
+      await statelessTransport.close().catch(() => {});
+      await statelessServer.close().catch(() => {});
+    }
+  }
 
   const server = Bun.serve({
     port: config.port ?? 3000,
@@ -172,45 +471,48 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
       // 1. Health check endpoint
       if (url.pathname === "/health") {
         if (req.method !== "GET") {
-          return new Response(JSON.stringify({ error: "Method not allowed" }), {
-            status: 405,
-            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-          });
+          return withCors(
+            new Response(JSON.stringify({ error: "Method not allowed" }), {
+              status: 405,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
         }
-        return new Response(
-          JSON.stringify({
-            status: "ok",
-            mode: "remote-mcp",
-            openproject: config.baseUrl,
-            readOnly: config.readOnly,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-          }
+        return withCors(
+          new Response(
+            JSON.stringify({
+              status: "ok",
+              mode: "remote-mcp",
+              openproject: config.baseUrl,
+              readOnly: config.readOnly,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          )
         );
       }
 
-      // 2. SSE connection initiation endpoint
-      if (url.pathname === "/sse") {
-        if (req.method !== "GET") {
-          return new Response(JSON.stringify({ error: "Method not allowed" }), {
-            status: 405,
-            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-          });
-        }
-
+      // 2. Classic MCP SSE endpoint: GET /sse without Mcp-Session-Id header
+      if (
+        url.pathname === "/sse" &&
+        req.method === "GET" &&
+        !req.headers.has("mcp-session-id")
+      ) {
         const apiKey = extractApiKey(req, url, config.apiKey);
         if (!apiKey) {
-          return new Response(
-            JSON.stringify({
-              error:
-                "Missing OpenProject API key. Provide via Authorization header, X-OpenProject-Api-Key header, or ?apiKey= query parameter.",
-            }),
-            {
-              status: 401,
-              headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-            }
+          return withCors(
+            new Response(
+              JSON.stringify({
+                error:
+                  "Missing OpenProject API key. Provide via Authorization header, X-OpenProject-Api-Key header, or ?apiKey= query parameter.",
+              }),
+              {
+                status: 401,
+                headers: { "Content-Type": "application/json" },
+              }
+            )
           );
         }
 
@@ -222,34 +524,13 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
           apiKey,
         });
 
-        const sessionServer = new McpServer({
-          name: SERVER_NAME,
-          version: SERVER_VERSION,
-        });
-
-        registerAllTools(sessionServer, {
-          readOnly: config.readOnly,
-          wrapExecute: async (fn, tool) => {
-            if (config.readOnly && !tool.readOnly) {
-              return formatToolError(
-                new OpenProjectError(
-                  "Operation rejected. OpenProject MCP server is running in read-only mode.",
-                  { code: "SERVER_READ_ONLY" }
-                )
-              );
-            }
-            return runWithContext(
-              { client: sessionClient, isReadOnly: config.readOnly },
-              fn
-            );
-          },
-        });
+        const sessionServer = createSessionServer(config, sessionClient);
 
         let cleanedUp = false;
         const cleanup = async () => {
           if (cleanedUp) return;
           cleanedUp = true;
-          activeSessions.delete(sessionId);
+          activeSseSessions.delete(sessionId);
           try {
             await transport.close();
           } catch {}
@@ -258,14 +539,14 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
           } catch {}
         };
 
-        const sessionRecord: SessionRecord = {
+        const sessionRecord: SseSessionRecord = {
           sessionId,
           transport,
           server: sessionServer,
           client: sessionClient,
           cleanup,
         };
-        activeSessions.set(sessionId, sessionRecord);
+        activeSseSessions.set(sessionId, sessionRecord);
 
         if (req.signal.aborted) {
           cleanup().catch(() => {});
@@ -292,68 +573,79 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
           },
         });
 
-        return new Response(stream, {
-          status: 200,
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache, no-transform",
-            "Connection": "keep-alive",
-            ...CORS_HEADERS,
-          },
-        });
+        return withCors(
+          new Response(stream, {
+            status: 200,
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache, no-transform",
+              "Connection": "keep-alive",
+            },
+          })
+        );
       }
 
-      // 3. JSON-RPC message posting endpoint
+      // 3. Classic MCP JSON-RPC message posting endpoint: POST /messages
       if (url.pathname === "/messages") {
         if (req.method !== "POST") {
-          return new Response(JSON.stringify({ error: "Method not allowed" }), {
-            status: 405,
-            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-          });
+          return withCors(
+            new Response(JSON.stringify({ error: "Method not allowed" }), {
+              status: 405,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
         }
 
         const sessionId = url.searchParams.get("sessionId");
         if (!sessionId) {
-          return new Response(
-            JSON.stringify({ error: "Missing sessionId query parameter" }),
-            {
-              status: 400,
-              headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-            }
+          return withCors(
+            new Response(
+              JSON.stringify({ error: "Missing sessionId query parameter" }),
+              {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              }
+            )
           );
         }
 
-        const session = activeSessions.get(sessionId);
+        const session = activeSseSessions.get(sessionId);
         if (!session) {
-          return new Response(JSON.stringify({ error: "Session not found" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-          });
+          return withCors(
+            new Response(JSON.stringify({ error: "Session not found" }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
         }
 
         let body: unknown;
         try {
           body = await req.json();
         } catch {
-          return new Response(JSON.stringify({ error: "Invalid JSON" }), {
-            status: 400,
-            headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-          });
+          return withCors(
+            new Response(JSON.stringify({ error: "Invalid JSON" }), {
+              status: 400,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
         }
 
         if (Array.isArray(body)) {
           for (const item of body) {
             const parseResult = JSONRPCMessageSchema.safeParse(item);
             if (!parseResult.success) {
-              return new Response(
-                JSON.stringify({
-                  error: "Invalid JSON-RPC message in batch",
-                  details: parseResult.error.format(),
-                }),
-                {
-                  status: 400,
-                  headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-                }
+              return withCors(
+                new Response(
+                  JSON.stringify({
+                    error: "Invalid JSON-RPC message in batch",
+                    details: parseResult.error.format(),
+                  }),
+                  {
+                    status: 400,
+                    headers: { "Content-Type": "application/json" },
+                  }
+                )
               );
             }
           }
@@ -368,15 +660,17 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
         } else {
           const parseResult = JSONRPCMessageSchema.safeParse(body);
           if (!parseResult.success) {
-            return new Response(
-              JSON.stringify({
-                error: "Invalid JSON-RPC message",
-                details: parseResult.error.format(),
-              }),
-              {
-                status: 400,
-                headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-              }
+            return withCors(
+              new Response(
+                JSON.stringify({
+                  error: "Invalid JSON-RPC message",
+                  details: parseResult.error.format(),
+                }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json" },
+                }
+              )
             );
           }
 
@@ -388,17 +682,32 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
           );
         }
 
-        return new Response("Accepted", {
-          status: 202,
-          headers: { "Content-Type": "text/plain", ...CORS_HEADERS },
-        });
+        return withCors(
+          new Response("Accepted", {
+            status: 202,
+            headers: { "Content-Type": "text/plain" },
+          })
+        );
       }
 
-      // 4. Default Not Found
-      return new Response(JSON.stringify({ error: "Not Found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json", ...CORS_HEADERS },
-      });
+      // 4. Streamable HTTP MCP endpoints: /sse (POST/DELETE/GET with session), /mcp, /
+      const isStreamablePath =
+        url.pathname === "/sse" ||
+        url.pathname === "/mcp" ||
+        url.pathname === "/" ||
+        url.pathname === "";
+
+      if (isStreamablePath) {
+        return handleStreamableRequest(req, url);
+      }
+
+      // 5. Default Not Found
+      return withCors(
+        new Response(JSON.stringify({ error: "Not Found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
     },
   });
 
@@ -406,14 +715,19 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
     server,
     port: server.port ?? (config.port ?? 3000),
     async stop() {
-      for (const session of activeSessions.values()) {
+      clearInterval(cleanupInterval);
+      for (const session of activeSseSessions.values()) {
         await session.cleanup();
       }
-      activeSessions.clear();
+      activeSseSessions.clear();
+      for (const session of activeStreamableSessions.values()) {
+        await session.cleanup();
+      }
+      activeStreamableSessions.clear();
       server.stop(true);
     },
     getActiveSessionsCount() {
-      return activeSessions.size;
+      return activeSseSessions.size + activeStreamableSessions.size;
     },
   };
 }

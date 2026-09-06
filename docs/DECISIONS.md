@@ -381,20 +381,22 @@ Key requirements for hosted operation:
 4. **Health & Lifecycle Management**: Provide standardized `/health` endpoints and clean session eviction on client disconnect to prevent memory leaks.
 
 ### Decision
-1. **HTTP/SSE Transport Engine**: Implement `src/http-server.ts` utilizing native `Bun.serve` and Web Streams for Server-Sent Events (`text/event-stream`).
+1. **HTTP/SSE & Streamable HTTP Transport Engine**: Implement `src/http-server.ts` utilizing native `Bun.serve` and Web Streams. Support both classic SSE transport (`GET /sse` + `POST /messages`) and modern MCP Streamable HTTP transport (`POST`, `GET`, `DELETE` on `/sse`, `/mcp`, and `/`) for clients like Open WebUI.
 2. **Credential Extraction Precedence**:
    - Priority 1: `Authorization: Bearer <token>`
    - Priority 2: `X-OpenProject-Api-Key: <token>`
    - Priority 3: `?apiKey=<token>` URL query parameter
-   - Reject unauthenticated `/sse` requests immediately with HTTP 401 Unauthorized.
-3. **Per-Connection Isolation**: For each `/sse` connection, allocate a unique `sessionId` and initialize an isolated `OpenProjectClient` and `McpServer` instance. Route tool calls and JSON-RPC dispatch via `runWithContext` using `AsyncLocalStorage`.
-4. **Session Eviction**: Register connection abort and stream cancellation handlers (`req.signal.addEventListener("abort")` and `stream.cancel()`) that evict disconnected sessions from active memory.
+   - Priority 4: Server-configured `OPENPROJECT_API_KEY` fallback (single-tenant deployments)
+   - Reject unauthenticated requests immediately with HTTP 401 Unauthorized.
+3. **Per-Connection Isolation**: For each connection or session, allocate a unique `sessionId` and initialize an isolated `OpenProjectClient` and `McpServer` instance. Route tool calls and JSON-RPC dispatch via `runWithContext` using `AsyncLocalStorage`.
+4. **Session Eviction**: Register connection abort, stream cancellation handlers, and session TTL timers that evict disconnected sessions from active memory.
 5. **Container Deployment**: Provide `docker-compose.server.yml` with built-in `/health` probe checking `GET /health` every 30s.
 
 ### Consequences
 - **Positive**:
   - Organizations can deploy a single shared `openproject-mcp` service without sharing API tokens.
-  - Full compatibility with remote MCP client connections in Cursor, Claude Desktop, and autonomous agents.
+  - Full compatibility with both classic SSE clients (Cursor, Claude Desktop) and Streamable HTTP clients (Open WebUI, Python MCP SDK).
   - Backward compatibility: when `PORT` is not set, stdio transport remains the default with zero overhead.
 - **Negative**:
   - Requires network infrastructure (e.g. reverse proxy with TLS termination) in production to protect credentials in transit.
+
