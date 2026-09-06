@@ -98,9 +98,12 @@ export async function getOpenApiSpec(
   // 2. Specific path lookup
   if (options?.path) {
     const target = normalizePath(options.path);
+    const suffix = target.replace(/^\/api\/v3/, "");
     const matchedKey =
       allPaths.find((p) => p.toLowerCase() === target) ||
-      allPaths.find((p) => p.toLowerCase().endsWith(target.replace(/^\/api\/v3/, "")));
+      (suffix.length > 0 && suffix !== "/"
+        ? allPaths.find((p) => p.toLowerCase().endsWith(suffix))
+        : undefined);
 
     if (!matchedKey || !doc.paths[matchedKey]) {
       const sample = allPaths.slice(0, 10).join(", ");

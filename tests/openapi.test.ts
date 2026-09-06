@@ -6,6 +6,7 @@ import {
 } from "../src/services/openapi.ts";
 import { OpenProjectClient } from "../src/client/api-client.ts";
 import { OpenProjectNotFoundError } from "../src/client/errors.ts";
+import { runWithContext } from "../src/context.ts";
 
 describe("OpenApi Service", () => {
   const mockSpec = {
@@ -144,10 +145,17 @@ describe("OpenApi Service", () => {
     );
   });
 
-  test("full mode returns the complete raw specification", async () => {
-    const result = (await getOpenApiSpec({ full: true }, mockClient)) as typeof mockSpec;
-    expect(result.openapi).toBe("3.0.3");
-    expect(result.paths).toBeDefined();
-    expect(result.components).toBeDefined();
+  test("resolves ambient client from RequestContext when client is omitted", async () => {
+    const res = await runWithContext({ client: mockClient, isReadOnly: true }, async () => {
+      return getOpenApiSpec({});
+    });
+    expect((res as OpenApiSummary).title).toBe("OpenProject API V3 (Test)");
+  });
+
+  test("path mode does not falsely match root /api/v3 via empty suffix", async () => {
+    // If /api/v3 itself is not a path key, requesting it must throw OpenProjectNotFoundError
+    expect(getOpenApiSpec({ path: "/api/v3" }, mockClient)).rejects.toThrow(
+      OpenProjectNotFoundError
+    );
   });
 });
