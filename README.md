@@ -418,6 +418,7 @@ The MCP server accepts configuration through environment variables, CLI argument
 | `OPENPROJECT_API_KEY` | Personal API token (required in stdio mode; supplied per-client in HTTP mode) | - |
 | `OPENPROJECT_READ_ONLY` | Run server in read-only mode (`true` / `false` or `--read-only`) | `false` |
 | `PORT` | HTTP server port when running hosted MCP server, or web port for local dev stack | `3000` (MCP) / `8080` (test stack) |
+| `HOST_PORT` | Optional environment fallback for `PORT`, and host-side port in `docker-compose.server.yml` | `3000` |
 | `HOST` | Bind host for hosted HTTP server | `0.0.0.0` |
 | `TAG` | OpenProject container image tag (local test stack) | `17-slim` |
 | `POSTGRES_VERSION` | PostgreSQL container image tag (local test stack) | `17` |

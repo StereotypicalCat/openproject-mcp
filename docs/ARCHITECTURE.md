@@ -75,9 +75,11 @@ Domain services map MCP tool calls to concrete business logic and OpenProject AP
 ### 2.4. Configuration & Environment Layer
 - Parses and validates configuration at startup:
   - `OPENPROJECT_BASE_URL`: Base URL of the OpenProject instance (e.g., `https://openproject.example.com`).
-  - `OPENPROJECT_API_KEY`: User API key generated in OpenProject under "My Account > Access tokens".
+  - `OPENPROJECT_API_KEY`: User API key generated in OpenProject under "My Account > Access tokens" (required in stdio mode; optional in HTTP/SSE mode).
   - `OPENPROJECT_READ_ONLY`: Boolean flag (`true` / `false`, default: `false`). Can also be set via `--read-only` CLI argument.
-- Fails fast with actionable setup advice if required credentials are missing or invalid.
+  - `PORT`: HTTP server listening port (e.g. `3000` or `--port <num>`). When set, activates HTTP/SSE remote transport. Supports `HOST_PORT` as an environment variable fallback.
+  - `HOST`: Server bind address (or `--host <addr>`, default: `0.0.0.0`).
+- Fails fast with actionable setup advice if required credentials are missing or invalid in stdio mode.
 
 ### 2.5. Read-Only Execution Mode
 The server supports a dedicated read-only operating mode designed for auditing, reporting, and exploratory agent workflows:

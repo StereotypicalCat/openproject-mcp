@@ -376,7 +376,7 @@ Accepted
 
 Key requirements for hosted operation:
 1. **Multi-Tenant Credential Scoping**: A single server process connects to a shared OpenProject base URL (`OPENPROJECT_BASE_URL`), but every connecting user/agent must use their own personal OpenProject API token. User credentials must never bleed across sessions or be retained in global mutable memory.
-2. **Dual-Transport Entrypoint**: The server CLI must support both local stdio execution and hosted HTTP/SSE execution via configuration (`PORT` / `--port`).
+2. **Dual-Transport Entrypoint**: The server CLI must support both local stdio execution and hosted HTTP/SSE execution via configuration (`PORT`, `HOST_PORT` fallback, or `--port`).
 3. **Flexible Authentication**: Clients must be able to authenticate via standard headers (`Authorization: Bearer <key>`, `X-OpenProject-Api-Key: <key>`) or query parameters (`?apiKey=<key>`) for SSE-compatible desktop and web clients.
 4. **Health & Lifecycle Management**: Provide standardized `/health` endpoints and clean session eviction on client disconnect to prevent memory leaks.
 

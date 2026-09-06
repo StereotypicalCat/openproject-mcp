@@ -21,7 +21,8 @@ export const configSchema = z
     if (data.port === undefined && (!data.apiKey || data.apiKey.trim().length === 0)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "OPENPROJECT_API_KEY is required in stdio mode (when port is not set)",
+        message:
+          "OPENPROJECT_API_KEY is required in stdio mode (set PORT, HOST_PORT, or --port to run as an HTTP server)",
         path: ["apiKey"],
       });
     }
