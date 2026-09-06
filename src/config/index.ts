@@ -69,7 +69,7 @@ export function loadConfig(
     readOnlyEnv === "yes";
 
   const portArg = parseCliArg(argv, "--port");
-  const portStr = portArg ?? env.PORT;
+  const portStr = portArg ?? env.PORT ?? env.HOST_PORT;
   let port: number | undefined;
   if (portStr !== undefined && portStr.trim() !== "") {
     const parsed = parseInt(portStr.trim(), 10);

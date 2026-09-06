@@ -82,6 +82,18 @@ describe("Configuration Loader (HTTP & Stdio Support)", () => {
     expect(config.apiKey).toBeUndefined();
   });
 
+  test("loads HTTP configuration when HOST_PORT is set as fallback without PORT", () => {
+    process.env.OPENPROJECT_BASE_URL = "https://openproject.example.com";
+    delete process.env.OPENPROJECT_API_KEY;
+    delete process.env.PORT;
+    process.env.HOST_PORT = "3000";
+
+    const config = loadConfig();
+    expect(config.baseUrl).toBe("https://openproject.example.com");
+    expect(config.port).toBe(3000);
+    expect(config.apiKey).toBeUndefined();
+  });
+
   test("loads HTTP configuration with API key when provided", () => {
     process.env.OPENPROJECT_BASE_URL = "https://openproject.example.com";
     process.env.OPENPROJECT_API_KEY = "test-key";
