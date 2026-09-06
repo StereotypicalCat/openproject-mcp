@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  allTools,
+  registerAllTools,
+  type RegisterToolsOptions,
+  type AnyToolDefinition,
+} from "../src/tools/index";
+import {
   formatToolSuccess,
   formatToolError,
   registerTool,
@@ -926,6 +932,60 @@ describe("Metadata Tools", () => {
     expect(registeredTools["openproject_list_statuses"]).toBeDefined();
     expect(registeredTools["openproject_list_priorities"]).toBeDefined();
     expect(registeredTools["openproject_list_users"]).toBeDefined();
+  });
+});
+
+describe("Tool Registry", () => {
+  test("allTools contains exactly 10 Phase 1 tools", () => {
+    expect(allTools).toHaveLength(10);
+    const names = allTools.map((t) => t.name);
+    expect(names).toEqual([
+      "openproject_list_projects",
+      "openproject_get_project",
+      "openproject_list_work_packages",
+      "openproject_get_work_package",
+      "openproject_list_queries",
+      "openproject_get_query",
+      "openproject_list_types",
+      "openproject_list_statuses",
+      "openproject_list_priorities",
+      "openproject_list_users",
+    ]);
+  });
+
+  test("all tools in Phase 1 are marked readOnly: true", () => {
+    for (const tool of allTools) {
+      expect(tool.readOnly).toBe(true);
+    }
+  });
+
+  test("registerAllTools registers all 10 tools on McpServer", () => {
+    const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
+    registerAllTools(server);
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<string, unknown>;
+      }
+    )._registeredTools;
+
+    expect(Object.keys(registeredTools)).toHaveLength(10);
+    for (const tool of allTools) {
+      expect(registeredTools[tool.name]).toBeDefined();
+    }
+  });
+
+  test("registerAllTools filters out non-readOnly tools when readOnly is true", () => {
+    const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
+    registerAllTools(server, { readOnly: true });
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<string, unknown>;
+      }
+    )._registeredTools;
+
+    expect(Object.keys(registeredTools)).toHaveLength(10);
   });
 });
 
