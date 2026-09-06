@@ -42,8 +42,8 @@ export function createServer(config: AppConfig): OpenProjectMcpServer {
       if (config.readOnly && !tool.readOnly) {
         return formatToolError(
           new OpenProjectError(
-            "SERVER_READ_ONLY",
-            "Operation rejected. OpenProject MCP server is running in read-only mode."
+            "Operation rejected. OpenProject MCP server is running in read-only mode.",
+            { code: "SERVER_READ_ONLY" }
           )
         );
       }
