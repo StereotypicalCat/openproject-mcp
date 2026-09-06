@@ -106,6 +106,14 @@
   - [x] Record [ADR-016](DECISIONS.md#adr-016-hosted-remote-mcp-server-architecture-httpsse-transport--multi-tenant-credential-scoping).
   - [x] Update documentation with hosted deployment guide and remote client setups for Cursor and Claude Desktop in [README.md](../README.md).
 
+- [x] **Task 8: OpenAPI 3.1.0 Specification & REST Tool Execution Bridge**
+  - [x] Implement dynamic OpenAPI specification generator `src/openapi-spec.ts`.
+  - [x] Expose `GET /openapi.json` and `GET /swagger.json` in `src/http-server.ts`.
+  - [x] Expose REST tool execution endpoint `POST /api/tools/:toolName` with Zod parameter validation and `RequestContext` execution.
+  - [x] Add automated test coverage in `tests/http-server.test.ts`.
+  - [x] Record [ADR-017](DECISIONS.md#adr-017-openapi-310-specification--rest-tool-execution-bridge-for-openapi-clients) in `docs/DECISIONS.md`.
+  - [x] Document OpenAPI connection mode and server endpoints reference table in [README.md](../README.md).
+
 ---
 
 ## 3. Backlog & Future Phases

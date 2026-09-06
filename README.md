@@ -274,17 +274,45 @@ In `claude_desktop_config.json` or clients connecting directly via SSE URL:
 }
 ```
 
-#### Open WebUI (Streamable HTTP)
-In Open WebUI (**Admin Panel > Settings > External Tools** or **User Settings > Tools**):
-1. Click **+** (Add Connection).
-2. Select **Type**: `MCP (Streamable HTTP)`.
-3. Set **URL**:
-   - In Docker Compose on the same network: `http://openproject-mcp:3000/mcp` (or `http://openproject-mcp:3000/sse`)
+### Open WebUI
+
+Open WebUI supports two connection modes for `openproject-mcp`:
+
+#### Option 1: MCP (Streamable HTTP) — Recommended
+1. Navigate to **Admin Panel > Settings > External Tools** (or **User Settings > Tools**).
+2. Click **+** (Add Connection).
+3. Select **Type**: `MCP (Streamable HTTP)`.
+4. Set **URL**:
+   - In Docker Compose on shared network: `http://openproject-mcp:3000/mcp` (or `http://openproject-mcp:3000/sse`)
    - From host machine: `http://localhost:3000/mcp`
-4. Set **API Key / Auth Header** (optional):
-   - If `OPENPROJECT_API_KEY` is configured in the server container environment, no key is needed in the client.
-   - For multi-user environments, pass `Bearer <your-openproject-api-key>` or append `?apiKey=<your-key>`.
-5. Click **Verify** to test connectivity and discover tools.
+5. Set **Auth** (optional): `Bearer <your-openproject-api-key>` if multi-user, or leave blank if `OPENPROJECT_API_KEY` is configured in the container.
+6. Click **Verify Connection**.
+
+#### Option 2: OpenAPI Mode
+If your Open WebUI installation connects to tool servers using OpenAPI:
+1. Click **+** (Add Connection).
+2. Select **Type**: `OpenAPI`.
+3. Set **URL**:
+   - In Docker Compose on shared network: `http://openproject-mcp:3000/openapi.json`
+   - From host machine: `http://localhost:3000/openapi.json`
+4. Set **Auth Header** (optional): `Bearer <your-openproject-api-key>`.
+5. Click **Verify Connection**.
+
+---
+
+### Hosted Server Endpoints Reference
+
+When running `openproject-mcp` as an HTTP server (`PORT=3000`), the following endpoints are exposed:
+
+| Endpoint | Method | Protocol / Client | Description |
+| :--- | :--- | :--- | :--- |
+| `/mcp` | POST, GET, DELETE | MCP Streamable HTTP | Primary endpoint for Open WebUI, Python MCP SDK, and modern Streamable HTTP clients |
+| `/sse` | GET, POST, DELETE | MCP SSE & Streamable HTTP | Dual-purpose: `GET` establishes classic SSE stream (Cursor, Claude Desktop); `POST` handles Streamable HTTP |
+| `/messages` | POST | Classic MCP SSE | Message posting endpoint for established SSE sessions (`?sessionId=...`) |
+| `/openapi.json` | GET | OpenAPI 3.1.0 | OpenAPI specification for Open WebUI (OpenAPI mode), Swagger UI, and REST integrations |
+| `/swagger.json` | GET | OpenAPI 3.1.0 | Alias for `/openapi.json` |
+| `/api/tools/{name}` | POST | REST Tool Execution | Executes an individual tool with JSON arguments and returns structured JSON output |
+| `/health` | GET | Health Check | Service health check returning `{ status: "ok", mode: "remote-mcp" }` |
 
 ---
 

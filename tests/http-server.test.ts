@@ -511,6 +511,128 @@ describe("Hosted Remote MCP Server (HTTP/SSE)", () => {
     expect(res.status).toBe(404);
   });
 
+  test("GET /openapi.json and GET /swagger.json return valid OpenAPI 3.1.0 specification", async () => {
+    // 1. GET /openapi.json
+    const res = await fetch(`${serverUrl}/openapi.json`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+
+    const spec = (await res.json()) as {
+      openapi: string;
+      info: { title: string; version: string };
+      paths: Record<string, { post: { operationId: string; description: string } }>;
+    };
+    expect(spec.openapi).toBe("3.1.0");
+    expect(spec.info.title).toContain("OpenProject");
+    expect(spec.paths["/api/tools/openproject_list_projects"]).toBeDefined();
+    expect(spec.paths["/api/tools/openproject_list_projects"]?.post.operationId).toBe(
+      "openproject_list_projects"
+    );
+    expect(spec.paths["/api/tools/openproject_get_work_package"]).toBeDefined();
+
+    // 2. GET /swagger.json returns identical spec
+    const swaggerRes = await fetch(`${serverUrl}/swagger.json`);
+    expect(swaggerRes.status).toBe(200);
+    const swaggerSpec = (await swaggerRes.json()) as { openapi: string };
+    expect(swaggerSpec.openapi).toBe("3.1.0");
+  });
+
+  test("POST /api/tools/:toolName executes tool and returns JSON result", async () => {
+    // 1. Missing API key returns 401
+    const noAuthRes = await fetch(`${serverUrl}/api/tools/openproject_list_projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pageSize: 10 }),
+    });
+    expect(noAuthRes.status).toBe(401);
+
+    // 2. Non-existent tool returns 404
+    const notFoundRes = await fetch(`${serverUrl}/api/tools/non_existent_tool`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    });
+    expect(notFoundRes.status).toBe(404);
+
+    // 3. Invalid tool arguments return 400
+    const invalidArgRes = await fetch(`${serverUrl}/api/tools/openproject_get_project`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}), // Missing required projectId
+    });
+    expect(invalidArgRes.status).toBe(400);
+
+    // 4. Valid invocation executes tool and returns result
+    const validRes = await fetch(`${serverUrl}/api/tools/openproject_list_projects`, {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ pageSize: 5 }),
+    });
+    expect(validRes.status).toBe(200);
+    const result = (await validRes.json()) as {
+      content: Array<{ type: string; text: string }>;
+      data?: unknown;
+    };
+    expect(result.content).toBeDefined();
+    expect(result.content.length).toBeGreaterThan(0);
+    expect(result.content[0]?.type).toBe("text");
+
+    // 5. Successful data execution with mocked fetch
+    const originalFetch = globalThis.fetch;
+    try {
+      globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        if (String(url).includes("/api/v3/projects")) {
+          return new Response(
+            JSON.stringify({
+              _embedded: {
+                elements: [
+                  { id: 1, name: "Test Project", identifier: "test-proj" },
+                ],
+              },
+              total: 1,
+              count: 1,
+              pageSize: 20,
+              offset: 1,
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/hal+json" },
+            }
+          );
+        }
+        return originalFetch(url, init);
+      }) as unknown as typeof fetch;
+
+      const mockRes = await fetch(`${serverUrl}/api/tools/openproject_list_projects`, {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer test-key",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pageSize: 5 }),
+      });
+      expect(mockRes.status).toBe(200);
+      const mockResult = (await mockRes.json()) as {
+        isError: boolean;
+        data?: { projects: Array<{ id: number; identifier: string }> };
+      };
+      expect(mockResult.isError).toBe(false);
+      expect(mockResult.data?.projects[0]?.identifier).toBe("test-proj");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("CLI entrypoint (src/index.ts) boots HTTP server when --port is provided", async () => {
     const proc = Bun.spawn(
       [

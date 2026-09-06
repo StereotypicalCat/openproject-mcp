@@ -207,7 +207,8 @@ openproject-mcp/
 ├── src/
 │   ├── index.ts                 # Dual-transport CLI entry point (stdio & HTTP)
 │   ├── server.ts                # Stdio MCP server factory & tool registration
-│   ├── http-server.ts           # Hosted HTTP/SSE multi-tenant server (Bun.serve)
+│   ├── http-server.ts           # Hosted HTTP/SSE/OpenAPI multi-tenant server (Bun.serve)
+│   ├── openapi-spec.ts          # OpenAPI 3.1.0 specification generator for MCP tools
 │   ├── context.ts               # RequestContext & AsyncLocalStorage
 │   ├── client/
 │   │   ├── api-client.ts        # OpenProject REST API v3 HTTP client

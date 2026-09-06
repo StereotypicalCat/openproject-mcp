@@ -17,13 +17,15 @@ import {
   type JSONRPCMessage,
   type MessageExtraInfo,
 } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import type { AppConfig } from "./config/index.ts";
 import { OpenProjectClient } from "./client/api-client.ts";
 import { runWithContext } from "./context.ts";
-import { registerAllTools } from "./tools/index.ts";
+import { registerAllTools, allTools } from "./tools/index.ts";
 import { formatToolError } from "./tools/common.ts";
 import { OpenProjectError } from "./client/errors.ts";
 import { SERVER_NAME, SERVER_VERSION } from "./server.ts";
+import { generateOpenApiSpec } from "./openapi-spec.ts";
 
 export interface HttpServerInstance {
   server: Server<unknown>;
@@ -494,7 +496,148 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
         );
       }
 
-      // 2. Classic MCP SSE endpoint: GET /sse without Mcp-Session-Id header
+      // 2. OpenAPI specification endpoint
+      if (url.pathname === "/openapi.json" || url.pathname === "/swagger.json") {
+        if (req.method !== "GET") {
+          return withCors(
+            new Response(JSON.stringify({ error: "Method not allowed" }), {
+              status: 405,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        }
+        const spec = generateOpenApiSpec(config);
+        return withCors(
+          new Response(JSON.stringify(spec, null, 2), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        );
+      }
+
+      // 3. REST tool execution endpoint (OpenAPI callers)
+      if (
+        url.pathname.startsWith("/api/tools/") ||
+        url.pathname.startsWith("/tools/")
+      ) {
+        if (req.method !== "POST") {
+          return withCors(
+            new Response(JSON.stringify({ error: "Method not allowed" }), {
+              status: 405,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        }
+
+        const toolName = url.pathname.replace(/^\/(api\/)?tools\//, "");
+        const tool = allTools.find((t) => t.name === toolName);
+        if (!tool) {
+          return withCors(
+            new Response(JSON.stringify({ error: `Tool '${toolName}' not found` }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            })
+          );
+        }
+
+        if (config.readOnly && !tool.readOnly) {
+          return withCors(
+            new Response(
+              JSON.stringify({
+                error:
+                  "Operation rejected. OpenProject MCP server is running in read-only mode.",
+                code: "SERVER_READ_ONLY",
+              }),
+              {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+              }
+            )
+          );
+        }
+
+        const apiKey = extractApiKey(req, url, config.apiKey);
+        if (!apiKey) {
+          return withCors(
+            new Response(
+              JSON.stringify({
+                error:
+                  "Missing OpenProject API key. Provide via Authorization header, X-OpenProject-Api-Key header, or ?apiKey= query parameter.",
+              }),
+              {
+                status: 401,
+                headers: { "Content-Type": "application/json" },
+              }
+            )
+          );
+        }
+
+        let body: unknown = {};
+        const text = await req.text();
+        if (text.trim().length > 0) {
+          try {
+            body = JSON.parse(text);
+          } catch {
+            return withCors(
+              new Response(JSON.stringify({ error: "Invalid JSON" }), {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              })
+            );
+          }
+        }
+
+        let args: Record<string, unknown> = {};
+        if (tool.parameters) {
+          const parseResult = z.object(tool.parameters).safeParse(body);
+          if (!parseResult.success) {
+            return withCors(
+              new Response(
+                JSON.stringify({
+                  error: "Validation error",
+                  details: parseResult.error.format(),
+                }),
+                {
+                  status: 400,
+                  headers: { "Content-Type": "application/json" },
+                }
+              )
+            );
+          }
+          args = parseResult.data as Record<string, unknown>;
+        } else if (typeof body === "object" && body !== null) {
+          args = body as Record<string, unknown>;
+        }
+
+        const client = new OpenProjectClient({ baseUrl: config.baseUrl, apiKey });
+        const toolResponse = await runWithContext(
+          { client, isReadOnly: config.readOnly },
+          () => tool.execute(args as any)
+        );
+
+        let parsedData: unknown;
+        try {
+          if (toolResponse.content?.[0]?.text) {
+            parsedData = JSON.parse(toolResponse.content[0].text);
+          }
+        } catch {}
+
+        return withCors(
+          new Response(
+            JSON.stringify({
+              content: toolResponse.content,
+              isError: toolResponse.isError ?? false,
+              ...(parsedData !== undefined ? { data: parsedData } : {}),
+            }),
+            {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }
+          )
+        );
+      }
+
+      // 4. Classic MCP SSE endpoint: GET /sse without Mcp-Session-Id header
       if (
         url.pathname === "/sse" &&
         req.method === "GET" &&

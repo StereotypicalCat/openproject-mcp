@@ -400,3 +400,34 @@ Key requirements for hosted operation:
 - **Negative**:
   - Requires network infrastructure (e.g. reverse proxy with TLS termination) in production to protect credentials in transit.
 
+---
+
+## ADR-017: OpenAPI 3.1.0 Specification & REST Tool Execution Bridge for OpenAPI Clients
+
+### Status
+Accepted
+
+### Context
+While modern AI platforms (such as Open WebUI v0.6.31+) natively support MCP Streamable HTTP, many external tool orchestration platforms, custom user agents, and enterprise portals only integrate with external tools via standard OpenAPI 3.0 / 3.1 REST specifications (`openapi.json` / `swagger.json`). Furthermore, users of Open WebUI who configure connections using the "OpenAPI" tool server type expect a compliant OpenAPI specification endpoint that describes available tools and routes invocations over standard HTTP POST endpoints.
+
+### Decision
+1. **Dynamic OpenAPI Specification Generator (`src/openapi-spec.ts`)**:
+   - Inspect all registered MCP tools in `allTools`.
+   - Filter out mutating tools when `config.readOnly` is true.
+   - Convert tool parameter definitions (Zod schemas) into valid OpenAPI 3.1.0 JSON schemas via `zod-to-json-schema`.
+   - Expose the specification at `GET /openapi.json` and `GET /swagger.json`.
+2. **REST Tool Execution Endpoint (`POST /api/tools/{toolName}`)**:
+   - Parse and validate tool arguments from the JSON request body against the tool's Zod schema.
+   - Extract the user's OpenProject API key using standard precedence (`Authorization: Bearer`, `X-OpenProject-Api-Key`, or server default).
+   - Execute the tool within `runWithContext` using an isolated `OpenProjectClient`.
+   - Return HTTP 200 containing both formatted MCP text content and structured parsed JSON `data`.
+
+### Consequences
+- **Positive**:
+  - Open WebUI users can seamlessly connect using either connection type: "MCP (Streamable HTTP)" at `/mcp` or "OpenAPI" at `/openapi.json`.
+  - Tools are defined once in TypeScript / Zod and automatically exposed across both MCP and OpenAPI protocols with zero duplication.
+  - Full read-only guard enforcement across both transports.
+- **Negative**:
+  - Introduces `src/openapi-spec.ts` dependency on `zod-to-json-schema`.
+
+
