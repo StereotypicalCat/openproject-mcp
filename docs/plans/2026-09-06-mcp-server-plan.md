@@ -33,7 +33,7 @@
   - `registerTool(server, tool, options)`: passes execution through `wrapExecute` if supplied.
   - `registerAllTools(server, options)`: forwards `wrapExecute` to each tool registration.
 
-- [ ] **Step 1: Write failing tests for tool execution wrapping**
+- [x] **Step 1: Write failing tests for tool execution wrapping**
 
 In `tests/tools.test.ts`:
 ```typescript
@@ -63,12 +63,12 @@ describe("Tool Execution Wrapper", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/tools.test.ts`
 Expected: FAIL (options parameter or wrapExecute behavior not implemented).
 
-- [ ] **Step 3: Implement wrapExecute in `src/tools/common.ts` and `src/tools/index.ts`**
+- [x] **Step 3: Implement wrapExecute in `src/tools/common.ts` and `src/tools/index.ts`**
 
 In `src/tools/common.ts`:
 Update `registerTool`:
@@ -126,12 +126,12 @@ export interface RegisterToolsOptions {
 ```
 And pass `options` to each tool registration.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/tools.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/common.ts src/tools/index.ts tests/tools.test.ts
@@ -152,7 +152,7 @@ git commit -m "feat(tools): add execution wrapper support to tool registration"
   - `OpenProjectMcpServer`: `{ server: McpServer; client: OpenProjectClient; start: (transport?: Transport) => Promise<void>; stop: () => Promise<void> }`
   - `createServer(config: AppConfig): OpenProjectMcpServer`
 
-- [ ] **Step 1: Write failing tests for server factory**
+- [x] **Step 1: Write failing tests for server factory**
 
 In `tests/mcp-server.test.ts`:
 ```typescript
@@ -189,12 +189,12 @@ describe("MCP Server Factory", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/mcp-server.test.ts`
 Expected: FAIL with module `../src/server` not found.
 
-- [ ] **Step 3: Implement `src/server.ts`**
+- [x] **Step 3: Implement `src/server.ts`**
 
 In `src/server.ts`:
 ```typescript
@@ -261,12 +261,12 @@ export function createServer(config: AppConfig): OpenProjectMcpServer {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/mcp-server.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/server.ts tests/mcp-server.test.ts

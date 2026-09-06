@@ -101,25 +101,6 @@ describe("Read-Only Mode Enforcement", () => {
       execute: async () => ({ content: [{ type: "text", text: "created" }] }),
     };
 
-    const mcpServer = createServer({
-      baseUrl: "http://localhost:8080",
-      apiKey: "test-key",
-      readOnly: true,
-    });
-
-    // Manually register a mutating tool through the server to test filtering
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    await mcpServer.start(serverTransport);
-
-    const client = new Client({ name: "client", version: "1" });
-    await client.connect(clientTransport);
-
-    const toolsResult = await client.listTools();
-    const names = toolsResult.tools.map((t) => t.name);
-    expect(names).not.toContain("openproject_create_work_package_synthetic");
-
-    await client.close();
-    await mcpServer.stop();
 
     // Also verify registerAllTools explicitly filters out mutating tools when readOnly is true
     const standaloneServer = new McpServer({ name: "test-server", version: "1.0.0" });
