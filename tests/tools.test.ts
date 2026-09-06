@@ -1059,7 +1059,7 @@ describe("Tool Execution Wrapper", () => {
         >;
       }
     )._registeredTools["wrapped_tool"];
-    const result = await registered.handler({});
+    const result = await registered!.handler({});
     expect(wrapperCalled).toBe(true);
     expect(result.content[0]?.text).toBe("success");
   });
@@ -1101,7 +1101,7 @@ describe("Tool Execution Wrapper", () => {
       }
     )._registeredTools["param_wrapped_tool"];
 
-    const result = await registered.handler({ id: 123 });
+    const result = await registered!.handler({ id: 123 });
     expect(capturedToolName).toBe("param_wrapped_tool");
     expect(capturedArgs).toEqual({ id: 123 });
     expect(result.content[0]?.text).toBe("id: 123");
@@ -1146,7 +1146,7 @@ describe("Tool Execution Wrapper", () => {
     } as unknown as OpenProjectClient;
 
     await runWithContext({ client: dummyClient, isReadOnly: false }, () =>
-      listProjects.handler({})
+      listProjects!.handler({})
     );
 
     expect(interceptedTools).toContain("openproject_list_projects");
@@ -1163,7 +1163,7 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
     await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
       const listRes = await handleListProjects({ pageSize: 5 });
       expect(listRes.isError).toBeUndefined();
-      const listData = JSON.parse(listRes.content[0].text);
+      const listData = JSON.parse(listRes.content[0]!.text);
       expect(listData.projects.length).toBeGreaterThan(0);
 
       const targetProject =
@@ -1172,7 +1172,7 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
         ) || listData.projects[0];
       const getRes = await handleGetProject({ projectId: targetProject.id });
       expect(getRes.isError).toBeUndefined();
-      const getData = JSON.parse(getRes.content[0].text);
+      const getData = JSON.parse(getRes.content[0]!.text);
       expect(getData.id).toBe(targetProject.id);
     });
   });
@@ -1181,13 +1181,13 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
     await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
       const listRes = await handleListWorkPackages({ pageSize: 5 });
       expect(listRes.isError).toBeUndefined();
-      const listData = JSON.parse(listRes.content[0].text);
+      const listData = JSON.parse(listRes.content[0]!.text);
       expect(listData.workPackages.length).toBeGreaterThan(0);
 
       const wpId = listData.workPackages[0].id;
       const getRes = await handleGetWorkPackage({ workPackageId: wpId });
       expect(getRes.isError).toBeUndefined();
-      const getData = JSON.parse(getRes.content[0].text);
+      const getData = JSON.parse(getRes.content[0]!.text);
       expect(getData.id).toBe(wpId);
       expect(getData.subject).toBeDefined();
     });
@@ -1197,13 +1197,13 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
     await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
       const listRes = await handleListQueries({});
       expect(listRes.isError).toBeUndefined();
-      const listData = JSON.parse(listRes.content[0].text);
+      const listData = JSON.parse(listRes.content[0]!.text);
       expect(listData.queries.length).toBeGreaterThan(0);
 
       const queryId = listData.queries[0].id;
       const getRes = await handleGetQuery({ queryId });
       expect(getRes.isError).toBeUndefined();
-      const getData = JSON.parse(getRes.content[0].text);
+      const getData = JSON.parse(getRes.content[0]!.text);
       expect(getData.query.id).toBe(queryId);
       expect(getData.results).toBeDefined();
     });
@@ -1213,22 +1213,22 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
     await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
       const typesRes = await handleListTypes({});
       expect(typesRes.isError).toBeUndefined();
-      const typesData = JSON.parse(typesRes.content[0].text);
+      const typesData = JSON.parse(typesRes.content[0]!.text);
       expect(typesData.types.length).toBeGreaterThan(0);
 
       const statusesRes = await handleListStatuses({});
       expect(statusesRes.isError).toBeUndefined();
-      const statusesData = JSON.parse(statusesRes.content[0].text);
+      const statusesData = JSON.parse(statusesRes.content[0]!.text);
       expect(statusesData.statuses.length).toBeGreaterThan(0);
 
       const prioritiesRes = await handleListPriorities({});
       expect(prioritiesRes.isError).toBeUndefined();
-      const prioritiesData = JSON.parse(prioritiesRes.content[0].text);
+      const prioritiesData = JSON.parse(prioritiesRes.content[0]!.text);
       expect(prioritiesData.priorities.length).toBeGreaterThan(0);
 
       const usersRes = await handleListUsers({ pageSize: 5 });
       expect(usersRes.isError).toBeUndefined();
-      const usersData = JSON.parse(usersRes.content[0].text);
+      const usersData = JSON.parse(usersRes.content[0]!.text);
       expect(usersData.users.length).toBeGreaterThan(0);
     });
   });

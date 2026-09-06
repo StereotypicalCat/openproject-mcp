@@ -90,7 +90,7 @@ export async function getQueryResults(
     if (err instanceof OpenProjectNotFoundError) {
       const queryDetail = await opClient.get<HalResource>(`queries/${id}`);
       const resultsLink = queryDetail._links?.results;
-      const resultsHref = Array.isArray(resultsLink) ? resultsLink[0]?.href : resultsLink?.href;
+      const resultsHref = Array.isArray(resultsLink) ? resultsLink?.[0]?.href : resultsLink?.href;
       if (typeof resultsHref === "string" && resultsHref.length > 0) {
         const response = await opClient.get<HalCollection<HalResource>>(resultsHref, query);
         return unpackCollection(response, normalizeWorkPackageSummary);

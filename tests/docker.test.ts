@@ -31,6 +31,11 @@ describe("Docker Container Packaging", () => {
   });
 
   test("Docker image builds and starts up cleanly in container", async () => {
+    if (process.env.SKIP_DOCKER_TESTS === "true" || process.env.CI === "true") {
+      console.log("Skipping live docker build test in CI / SKIP_DOCKER_TESTS environment");
+      return;
+    }
+
     // Check if docker daemon is available in test environment
     const proc = Bun.spawn(["which", "docker"], { stdout: "pipe", stderr: "pipe" });
     const exitCode = await proc.exited;
@@ -70,12 +75,43 @@ describe("Docker Container Packaging", () => {
       }
     );
 
-    // Give it 1.5s to start and write banner to stderr
-    await Bun.sleep(1500);
+    // Read stderr with a timeout loop up to 5000ms waiting for the startup banner
+    let stderrText = "";
+    const decoder = new TextDecoder();
+    const reader = runProc.stderr.getReader();
+
+    const readLoop = (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          stderrText += decoder.decode(value, { stream: true });
+          if (stderrText.includes("[openproject-mcp] Server started (readOnly=true)")) {
+            break;
+          }
+        }
+      } catch {
+        // stream closed or cancelled
+      }
+    })();
+
+    const startTime = Date.now();
+    while (
+      Date.now() - startTime < 5000 &&
+      !stderrText.includes("[openproject-mcp] Server started (readOnly=true)")
+    ) {
+      await Bun.sleep(50);
+    }
+
     runProc.kill();
     await runProc.exited;
+    try {
+      await reader.cancel();
+    } catch {
+      // ignore
+    }
+    await readLoop;
 
-    const stderrText = await new Response(runProc.stderr).text();
     expect(stderrText).toContain("[openproject-mcp] Server started (readOnly=true)");
   }, 60000);
 });

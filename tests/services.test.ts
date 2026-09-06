@@ -115,9 +115,9 @@ describe("Projects Service", () => {
     expect(requestedUrl).toContain("offset=1");
     expect(requestedUrl).toContain("sortBy=");
     expect(result.total).toBe(1);
-    expect(result.items[0].id).toBe(4);
-    expect(result.items[0].identifier).toBe("mcp-test-project");
-    expect(result.items[0].name).toBe("MCP Test Project");
+    expect(result.items[0]!.id).toBe(4);
+    expect(result.items[0]!.identifier).toBe("mcp-test-project");
+    expect(result.items[0]!.name).toBe("MCP Test Project");
   });
 
   test("getProject retrieves project detail by id or identifier", async () => {
@@ -304,10 +304,10 @@ describe("Work Packages Service", () => {
     expect(requestedUrl).toContain("filters=");
     expect(requestedUrl).toContain("pageSize=25");
     expect(result.total).toBe(1);
-    expect(result.items[0].id).toBe(38);
-    expect(result.items[0].subject).toBe("Implement MCP Server Core Protocol");
-    expect(result.items[0].status).toBe("In progress");
-    expect(result.items[0].type).toBe("Task");
+    expect(result.items[0]!.id).toBe(38);
+    expect(result.items[0]!.subject).toBe("Implement MCP Server Core Protocol");
+    expect(result.items[0]!.status).toBe("In progress");
+    expect(result.items[0]!.type).toBe("Task");
   });
 
   test("getWorkPackage returns full details with parent and children", async () => {
@@ -329,7 +329,7 @@ describe("Work Packages Service", () => {
     expect(wp.parent?.id).toBe(30);
     expect(wp.parent?.subject).toBe("Epic Parent");
     expect(wp.children?.length).toBe(2);
-    expect(wp.children?.[0].id).toBe(39);
+    expect(wp.children?.[0]?.id).toBe(39);
     expect(wp.lockVersion).toBe(3);
   });
 
@@ -425,9 +425,9 @@ describe("Queries Service", () => {
     expect(requestedUrl).toContain("pageSize=20");
     const decodedUrl = decodeURIComponent(requestedUrl);
     expect(decodedUrl).toContain('"project"');
-    expect(result.items[0].id).toBe(30);
-    expect(result.items[0].name).toBe("MCP Active Tasks");
-    expect(result.items[0].projectId).toBe(4);
+    expect(result.items[0]!.id).toBe(30);
+    expect(result.items[0]!.name).toBe("MCP Active Tasks");
+    expect(result.items[0]!.projectId).toBe(4);
   });
 
   test("getQuery returns normalized details with columns and filters", async () => {
@@ -448,9 +448,9 @@ describe("Queries Service", () => {
     expect(query.name).toBe("MCP Active Tasks");
     expect(query.columns).toContain("ID");
     expect(query.columns).toContain("Subject");
-    expect(query.sortBy?.[0].attribute).toBe("id");
-    expect(query.sortBy?.[0].direction).toBe("asc");
-    expect(query.filters?.[0].field).toBe("Status");
+    expect(query.sortBy?.[0]?.attribute).toBe("id");
+    expect(query.sortBy?.[0]?.direction).toBe("asc");
+    expect(query.filters?.[0]?.field).toBe("Status");
     expect(query.resultsHref).toBe("/api/v3/queries/30/results");
   });
 
@@ -493,8 +493,8 @@ describe("Queries Service", () => {
     const result = await getQueryResults(30, { pageSize: 10 }, client);
     expect(requestedUrl).toContain("/api/v3/queries/30/results");
     expect(requestedUrl).toContain("pageSize=10");
-    expect(result.items[0].id).toBe(38);
-    expect(result.items[0].subject).toBe("Implement MCP Server Core Protocol");
+    expect(result.items[0]!.id).toBe(38);
+    expect(result.items[0]!.subject).toBe("Implement MCP Server Core Protocol");
   });
 });
 
@@ -523,9 +523,9 @@ describe("Metadata Service", () => {
 
     const statuses = await listStatuses(client);
     expect(statuses.length).toBe(2);
-    expect(statuses[0].name).toBe("New");
-    expect(statuses[0].isClosed).toBe(false);
-    expect(statuses[1].isClosed).toBe(true);
+    expect(statuses[0]!.name).toBe("New");
+    expect(statuses[0]!.isClosed).toBe(false);
+    expect(statuses[1]!.isClosed).toBe(true);
   });
 
   test("listTypes scopes to project when projectId is provided", async () => {
@@ -551,7 +551,7 @@ describe("Metadata Service", () => {
 
     const types = await listTypes({ projectId: 4 }, client);
     expect(requestedUrl).toContain("/api/v3/projects/4/types");
-    expect(types[0].name).toBe("Task");
+    expect(types[0]!.name).toBe("Task");
   });
 
   test("listTypes fetches global types when projectId is omitted", async () => {
@@ -578,7 +578,7 @@ describe("Metadata Service", () => {
     const types = await listTypes(undefined, client);
     expect(requestedUrl).toContain("/api/v3/types");
     expect(requestedUrl).not.toContain("/projects/");
-    expect(types[0].name).toBe("Task");
+    expect(types[0]!.name).toBe("Task");
   });
 
   test("listPriorities retrieves priority items", async () => {
@@ -601,7 +601,7 @@ describe("Metadata Service", () => {
     });
 
     const priorities = await listPriorities(client);
-    expect(priorities[0].name).toBe("High");
+    expect(priorities[0]!.name).toBe("High");
   });
 
   test("listUsers returns paginated UserItem list", async () => {
@@ -631,8 +631,8 @@ describe("Metadata Service", () => {
 
     const users = await listUsers({ pageSize: 25, offset: 1 }, client);
     expect(requestedUrl).toContain("/api/v3/users");
-    expect(users.items[0].login).toBe("admin");
-    expect(users.items[0].admin).toBe(true);
+    expect(users.items[0]!.login).toBe("admin");
+    expect(users.items[0]!.admin).toBe(true);
   });
 
   test("src/services/index.ts exports all services properly", () => {
@@ -673,8 +673,8 @@ describe("Live Container Integration (Domain Services)", () => {
     const wps = await domainServices.listWorkPackages({ projectId: "mcp-test-project" }, client);
     expect(wps.items.length).toBeGreaterThan(0);
 
-    const firstWp = await domainServices.getWorkPackage(wps.items[0].id, client);
-    expect(firstWp.id).toBe(wps.items[0].id);
+    const firstWp = await domainServices.getWorkPackage(wps.items[0]!.id, client);
+    expect(firstWp.id).toBe(wps.items[0]!.id);
     expect(firstWp.subject).toBeDefined();
 
     const searchRes = await domainServices.searchWorkPackages("MCP", { projectId: "mcp-test-project" }, client);
