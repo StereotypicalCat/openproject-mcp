@@ -363,3 +363,38 @@ Users and client LLM applications (such as Claude Desktop, Cursor, or containeri
 - Provides seamless Docker execution for desktop and server MCP clients via `docker run -i --rm ghcr.io/<owner>/openproject-mcp:latest`.
 - Prevents container build regressions through automated PR verification.
 - Guarantees multi-architecture compatibility across Apple Silicon and x86_64 host machines.
+
+---
+
+## ADR-016: Hosted Remote MCP Server Architecture (HTTP/SSE Transport) & Multi-Tenant Credential Scoping
+
+### Status
+Accepted
+
+### Context
+`openproject-mcp` initially executed exclusively as a local child process over standard input/output (`stdio`). While ideal for individual developers running local tools like Claude Desktop or Cursor on their personal machines, team environments, shared hosting, and web agents require a remotely hosted MCP server instance accessible over standard network protocols.
+
+Key requirements for hosted operation:
+1. **Multi-Tenant Credential Scoping**: A single server process connects to a shared OpenProject base URL (`OPENPROJECT_BASE_URL`), but every connecting user/agent must use their own personal OpenProject API token. User credentials must never bleed across sessions or be retained in global mutable memory.
+2. **Dual-Transport Entrypoint**: The server CLI must support both local stdio execution and hosted HTTP/SSE execution via configuration (`PORT` / `--port`).
+3. **Flexible Authentication**: Clients must be able to authenticate via standard headers (`Authorization: Bearer <key>`, `X-OpenProject-Api-Key: <key>`) or query parameters (`?apiKey=<key>`) for SSE-compatible desktop and web clients.
+4. **Health & Lifecycle Management**: Provide standardized `/health` endpoints and clean session eviction on client disconnect to prevent memory leaks.
+
+### Decision
+1. **HTTP/SSE Transport Engine**: Implement `src/http-server.ts` utilizing native `Bun.serve` and Web Streams for Server-Sent Events (`text/event-stream`).
+2. **Credential Extraction Precedence**:
+   - Priority 1: `Authorization: Bearer <token>`
+   - Priority 2: `X-OpenProject-Api-Key: <token>`
+   - Priority 3: `?apiKey=<token>` URL query parameter
+   - Reject unauthenticated `/sse` requests immediately with HTTP 401 Unauthorized.
+3. **Per-Connection Isolation**: For each `/sse` connection, allocate a unique `sessionId` and initialize an isolated `OpenProjectClient` and `McpServer` instance. Route tool calls and JSON-RPC dispatch via `runWithContext` using `AsyncLocalStorage`.
+4. **Session Eviction**: Register connection abort and stream cancellation handlers (`req.signal.addEventListener("abort")` and `stream.cancel()`) that evict disconnected sessions from active memory.
+5. **Container Deployment**: Provide `docker-compose.server.yml` with built-in `/health` probe checking `GET /health` every 30s.
+
+### Consequences
+- **Positive**:
+  - Organizations can deploy a single shared `openproject-mcp` service without sharing API tokens.
+  - Full compatibility with remote MCP client connections in Cursor, Claude Desktop, and autonomous agents.
+  - Backward compatibility: when `PORT` is not set, stdio transport remains the default with zero overhead.
+- **Negative**:
+  - Requires network infrastructure (e.g. reverse proxy with TLS termination) in production to protect credentials in transit.

@@ -315,4 +315,64 @@ describe("Hosted Remote MCP Server (HTTP/SSE)", () => {
     await readerA!.cancel();
     await readerB!.cancel();
   });
+
+  test("CLI entrypoint (src/index.ts) boots HTTP server when --port is provided", async () => {
+    const proc = Bun.spawn(
+      [
+        "bun",
+        "src/index.ts",
+        "--port",
+        "0",
+        "--host",
+        "127.0.0.1",
+        "--read-only",
+      ],
+      {
+        env: {
+          ...process.env,
+          OPENPROJECT_BASE_URL: "https://mock.openproject.example.com",
+        },
+        stderr: "pipe",
+        stdout: "pipe",
+      }
+    );
+
+    let stderrOutput = "";
+    const decoder = new TextDecoder();
+    const reader = proc.stderr.getReader();
+
+    const readPromise = (async () => {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          stderrOutput += decoder.decode(value, { stream: true });
+          if (stderrOutput.includes("[openproject-mcp] Starting hosted HTTP server on 127.0.0.1:0...")) {
+            break;
+          }
+        }
+      } catch {
+        // Stream closed
+      }
+    })();
+
+    const start = Date.now();
+    while (
+      Date.now() - start < 5000 &&
+      !stderrOutput.includes("[openproject-mcp] Starting hosted HTTP server on 127.0.0.1:0...")
+    ) {
+      await Bun.sleep(50);
+    }
+
+    expect(stderrOutput).toContain("[openproject-mcp] Starting hosted HTTP server on 127.0.0.1:0...");
+
+    proc.kill();
+    await proc.exited;
+    try {
+      await reader.cancel();
+    } catch {
+      // ignore
+    }
+    await readPromise;
+  });
 });

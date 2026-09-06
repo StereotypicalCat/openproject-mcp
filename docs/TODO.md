@@ -96,10 +96,23 @@
   - [x] Recorded [ADR-015](DECISIONS.md#adr-015-docker-container-packaging-and-github-actions-cicd-pipeline).
   - [x] Updated [README.md](../README.md) with Docker Quickstart, read-only mode instructions, and client integration settings (Claude Desktop & Cursor).
 
+- [x] **Task 7: Hosted Remote MCP Server (HTTP/SSE Transport) & Multi-Tenant Credential Scoping**
+  - [x] Extend configuration loader with `port` and `host` options (`src/config/index.ts`, `tests/config.test.ts`).
+  - [x] Implement hosted HTTP/SSE MCP server with `Bun.serve` and Web Streams SSE (`src/http-server.ts`, `tests/http-server.test.ts`).
+  - [x] Implement credential extraction hierarchy (`Authorization: Bearer`, `X-OpenProject-Api-Key`, `?apiKey=`) with 401 unauthorized rejection.
+  - [x] Implement per-session client isolation and `runWithContext` dynamic scoping.
+  - [x] Wire dual-transport execution in CLI entrypoint (`src/index.ts`).
+  - [x] Create production `docker-compose.server.yml` with `/health` check probe.
+  - [x] Record [ADR-016](DECISIONS.md#adr-016-hosted-remote-mcp-server-architecture-httpsse-transport--multi-tenant-credential-scoping).
+  - [x] Update documentation with hosted deployment guide and remote client setups for Cursor and Claude Desktop in [README.md](../README.md).
+
 ---
 
 ## 3. Backlog & Future Phases
 
+- [x] **Phase 4: Remote Transport (Completed)**
+  - [x] Add SSE (Server-Sent Events) transport option for remote deployments.
+  - [x] Multi-tenant credential scoping with per-session isolation.
 - [ ] **Phase 2: Mutating Operations**
   - [ ] Create work package tool (`openproject_create_work_package`).
   - [ ] Update work package tool (`openproject_update_work_package`).
@@ -108,5 +121,3 @@
 - [ ] **Phase 3: Attachments & Documents**
   - [ ] Inspect and download attachment resources.
   - [ ] Wiki pages and project documents browsing.
-- [ ] **Phase 4: Remote Transport**
-  - [ ] Add SSE (Server-Sent Events) transport option for remote deployments.

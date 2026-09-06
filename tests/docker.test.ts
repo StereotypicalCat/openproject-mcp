@@ -30,6 +30,18 @@ describe("Docker Container Packaging", () => {
     expect(content).toContain("scripts");
   });
 
+  test("docker-compose.server.yml exists and defines hosted server configuration", () => {
+    const composePath = resolve(ROOT_DIR, "docker-compose.server.yml");
+    expect(existsSync(composePath)).toBe(true);
+
+    const content = readFileSync(composePath, "utf-8");
+    expect(content).toContain("ghcr.io/stereotypicalcat/openproject-mcp:latest");
+    expect(content).toContain("openproject-mcp-hosted");
+    expect(content).toContain("PORT=3000");
+    expect(content).toContain("OPENPROJECT_BASE_URL=");
+    expect(content).toContain("/health");
+  });
+
   test("Docker image builds and starts up cleanly in container", async () => {
     if (process.env.SKIP_DOCKER_TESTS === "true" || process.env.CI === "true") {
       console.log("Skipping live docker build test in CI / SKIP_DOCKER_TESTS environment");

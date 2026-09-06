@@ -101,6 +101,34 @@ If you prefer to run from source:
 
 ---
 
+### Method 3: Hosted Remote Server (Docker Compose & HTTP/SSE)
+
+Organizations can deploy `openproject-mcp` as a shared remote service. Multiple users and AI clients connect to a single hosted instance over HTTP/SSE, each authenticating with their own personal OpenProject API key.
+
+#### Deploy with Docker Compose
+Deploy `docker-compose.server.yml` with built-in health checking:
+
+```bash
+# Start hosted MCP server on port 3000
+OPENPROJECT_BASE_URL="https://openproject.example.com" \
+HOST_PORT=3000 \
+docker compose -f docker-compose.server.yml up -d
+```
+
+#### Run with Bun (from source)
+```bash
+OPENPROJECT_BASE_URL="https://openproject.example.com" \
+PORT=3000 \
+bun run src/index.ts
+```
+
+In hosted mode:
+- The server exposes `GET /health` for container orchestration and uptime monitoring.
+- Clients connect via `GET /sse` passing their personal API key via `Authorization: Bearer <key>`, `X-OpenProject-Api-Key: <key>`, or URL parameter `?apiKey=<key>`.
+- Each connection establishes an isolated session with dynamic `RequestContext` scoping—no credentials bleed across sessions or persist globally.
+
+---
+
 ## MCP Client Configuration
 
 ### Claude Desktop
@@ -191,6 +219,50 @@ Add the configuration in `.cursor/mcp.json` (or under **Cursor Settings > Featur
         "OPENPROJECT_BASE_URL": "https://openproject.example.com",
         "OPENPROJECT_API_KEY": "your-api-key"
       }
+    }
+  }
+}
+```
+
+---
+
+### Remote Connection to Hosted Server (Cursor & Claude Desktop)
+
+When connecting to an organization's hosted `openproject-mcp` remote server (e.g. `https://mcp.example.com` or `http://localhost:3000`):
+
+#### Cursor (`.cursor/mcp.json`)
+Using custom HTTP headers:
+```json
+{
+  "mcpServers": {
+    "openproject": {
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "X-OpenProject-Api-Key": "your-personal-api-key"
+      }
+    }
+  }
+}
+```
+
+Or using URL query parameter:
+```json
+{
+  "mcpServers": {
+    "openproject": {
+      "url": "https://mcp.example.com/sse?apiKey=your-personal-api-key"
+    }
+  }
+}
+```
+
+#### Claude Desktop
+In `claude_desktop_config.json` or clients connecting directly via SSE URL:
+```json
+{
+  "mcpServers": {
+    "openproject": {
+      "url": "https://mcp.example.com/sse?apiKey=your-personal-api-key"
     }
   }
 }
@@ -337,11 +409,12 @@ The MCP server accepts configuration through environment variables, CLI argument
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `OPENPROJECT_BASE_URL` | Base URL of the OpenProject instance | `http://localhost:8080` |
-| `OPENPROJECT_API_KEY` | Personal API token (created under My Account > Access tokens) | - |
+| `OPENPROJECT_API_KEY` | Personal API token (required in stdio mode; supplied per-client in HTTP mode) | - |
 | `OPENPROJECT_READ_ONLY` | Run server in read-only mode (`true` / `false` or `--read-only`) | `false` |
-| `PORT` | Local port for the Docker Compose web container | `8080` |
-| `TAG` | OpenProject container image tag | `17-slim` |
-| `POSTGRES_VERSION` | PostgreSQL container image tag | `17` |
+| `PORT` | HTTP server port when running hosted MCP server, or web port for local dev stack | `3000` (MCP) / `8080` (test stack) |
+| `HOST` | Bind host for hosted HTTP server | `0.0.0.0` |
+| `TAG` | OpenProject container image tag (local test stack) | `17-slim` |
+| `POSTGRES_VERSION` | PostgreSQL container image tag (local test stack) | `17` |
 
 ---
 
@@ -359,6 +432,9 @@ bun test
 
 # Run MCP server locally over stdio
 bun run src/index.ts
+
+# Run hosted MCP server locally over HTTP/SSE
+PORT=3000 bun run src/index.ts
 ```
 
 ---
@@ -366,9 +442,9 @@ bun run src/index.ts
 ## Development Roadmap
 
 - **Phase 1 (Completed)**: Read-only browsing tools for projects, work packages, queries, taxonomies, and OpenAPI introspection.
+- **Phase 4 (Completed)**: Remote HTTP/SSE transport (`Bun.serve`) with multi-tenant per-session credential scoping and Docker Compose deployment.
 - **Phase 2 (Upcoming)**: Mutating operations (create/update work packages, add comments, log time).
 - **Phase 3**: Attachment reading and document resources.
-- **Phase 4**: SSE / Stream transport for remote server deployments.
 
 ---
 
