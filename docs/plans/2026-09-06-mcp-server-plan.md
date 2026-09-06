@@ -440,7 +440,7 @@ git commit -m "feat(server): add read-only mode enforcement and execution guard 
 - Consumes: `src/server.ts`, `src/config/index.ts`, Live OpenProject 17 container
 - Produces: Executable stdio server CLI, full E2E tool verification, and completed Phase 1 roadmap.
 
-- [ ] **Step 1: Add live container E2E tool calling tests to `tests/mcp-server.test.ts`**
+- [x] **Step 1: Add live container E2E tool calling tests to `tests/mcp-server.test.ts`**
 
 In `tests/mcp-server.test.ts`:
 ```typescript
@@ -499,7 +499,7 @@ describe("End-to-End Live Tool Calling over MCP Client", () => {
 });
 ```
 
-- [ ] **Step 2: Implement production CLI entrypoint in `src/index.ts`**
+- [x] **Step 2: Implement production CLI entrypoint in `src/index.ts`**
 
 In `src/index.ts`:
 ```typescript
@@ -543,16 +543,16 @@ export { createServer } from "./server";
 export { SERVER_NAME, SERVER_VERSION } from "./server";
 ```
 
-- [ ] **Step 3: Run full test suite**
+- [x] **Step 3: Run full test suite**
 
 Run: `bun test`
 Expected: All tests pass across all 5 test files (`smoke`, `client`, `services`, `tools`, `mcp-server`, `read-only`).
 
-- [ ] **Step 4: Update `docs/TODO.md`**
+- [x] **Step 4: Update `docs/TODO.md`**
 
 Mark Task 4 as completed in `docs/TODO.md`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/index.ts tests/mcp-server.test.ts docs/TODO.md
