@@ -284,7 +284,7 @@ git commit -m "feat(server): implement MCP server factory and transport lifecycl
 - Consumes: `src/server.ts`, `src/config/index.ts`, `src/tools/common.ts`, `@modelcontextprotocol/sdk`
 - Produces: Complete verification of manifest filtering and execution guards under read-only mode.
 
-- [ ] **Step 1: Write read-only mode verification tests**
+- [x] **Step 1: Write read-only mode verification tests**
 
 In `tests/read-only.test.ts`:
 ```typescript
@@ -414,12 +414,12 @@ describe("Read-Only Mode Enforcement", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they pass**
+- [x] **Step 2: Run tests to verify they pass**
 
 Run: `bun test tests/read-only.test.ts`
 Expected: PASS (4 pass).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/read-only.test.ts
