@@ -88,9 +88,9 @@ export async function getQueryResults(
     return unpackCollection(response, normalizeWorkPackageSummary);
   } catch (err) {
     if (err instanceof OpenProjectNotFoundError) {
-      // In OpenProject API v3, query results endpoint is dynamically linked in query._links.results.href
       const queryDetail = await opClient.get<HalResource>(`queries/${id}`);
-      const resultsHref = queryDetail._links?.results?.href;
+      const resultsLink = queryDetail._links?.results;
+      const resultsHref = Array.isArray(resultsLink) ? resultsLink[0]?.href : resultsLink?.href;
       if (typeof resultsHref === "string" && resultsHref.length > 0) {
         const response = await opClient.get<HalCollection<HalResource>>(resultsHref, query);
         return unpackCollection(response, normalizeWorkPackageSummary);

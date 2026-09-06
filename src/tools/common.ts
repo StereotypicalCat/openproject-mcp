@@ -106,7 +106,7 @@ export function registerTool<
   };
 
   if (tool.parameters) {
-    server.tool(tool.name, tool.description, tool.parameters, async (args) => {
+    server.tool(tool.name, tool.description, tool.parameters as ZodRawShape, async (args) => {
       return executeFn(args as unknown as TArgs);
     });
   } else {
