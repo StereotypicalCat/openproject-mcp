@@ -15,14 +15,13 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Copy installed production node_modules from builder
-COPY --from=builder /app/node_modules ./node_modules
+COPY --chown=bun:bun --from=builder /app/node_modules ./node_modules
 
 # Copy application configuration and source code
-COPY package.json tsconfig.json ./
-COPY src ./src
+COPY --chown=bun:bun package.json tsconfig.json ./
+COPY --chown=bun:bun src ./src
 
-# Set ownership and drop root privileges
-RUN chown -R bun:bun /app
+# Drop root privileges
 USER bun
 
 # Standard MCP stdio communication

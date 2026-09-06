@@ -44,7 +44,8 @@ describe("GitHub Actions CI Workflow", () => {
     expect(content).toContain("docker/setup-qemu-action@v3");
     expect(content).toContain("docker/setup-buildx-action@v3");
     expect(content).toContain("docker/metadata-action@v5");
-    expect(content).toContain("ghcr.io/${{ github.repository }}");
+    expect(content).toContain("IMAGE_NAME=ghcr.io/$(echo \"${{ github.repository }}\" | tr '[:upper:]' '[:lower:]')");
+    expect(content).toContain("images: ${{ env.IMAGE_NAME }}");
     expect(content).toContain("docker/login-action@v3");
     expect(content).toContain("registry: ghcr.io");
     expect(content).toContain("docker/build-push-action@v6");
