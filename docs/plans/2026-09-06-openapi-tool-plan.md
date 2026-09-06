@@ -455,7 +455,7 @@ git commit -m "feat(services): implement OpenAPI specification service and in-me
   export function registerOpenApiTools(server: McpServer, options?: RegisterToolOptions): void;
   ```
 
-- [ ] **Step 1: Add tool tests to `tests/openapi.test.ts`**
+- [x] **Step 1: Add tool tests to `tests/openapi.test.ts`**
 
 ```typescript
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -509,12 +509,12 @@ describe("OpenApi MCP Tool Registration & Execution", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/openapi.test.ts`
 Expected: FAIL (Cannot find module `../src/tools/openapi`).
 
-- [ ] **Step 3: Implement `src/tools/openapi.ts` and update `src/tools/index.ts`**
+- [x] **Step 3: Implement `src/tools/openapi.ts` and update `src/tools/index.ts`**
 
 In `src/tools/openapi.ts`:
 ```typescript
@@ -589,12 +589,12 @@ Import `openApiTools` and `registerOpenApiTools` from `./openapi`.
 Add `...openApiTools` to `allTools`.
 Call `registerOpenApiTools(server, options)` in `registerAllTools`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/openapi.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/openapi.ts src/tools/index.ts tests/openapi.test.ts
