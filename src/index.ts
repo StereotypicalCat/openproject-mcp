@@ -12,7 +12,10 @@ async function main(): Promise<void> {
     const mcpServer = createServer(config);
 
     // Bind graceful termination
+    let isShuttingDown = false;
     const shutdown = async () => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
       console.error("\n[openproject-mcp] Received termination signal, shutting down...");
       await mcpServer.stop();
       process.exit(0);
