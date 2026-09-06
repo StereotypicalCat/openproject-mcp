@@ -298,6 +298,44 @@ Adopt the **Request-Scoped Context Architecture**:
 - **Negative**:
   - Tool handlers must access their client via `getRequestContext()` rather than directly importing a static instance.
 
+---
 
+## ADR-013: Stdio Server Assembly & Stream Hygiene
 
+### Status
+Accepted
 
+### Context
+When running over the standard MCP stdio transport (`StdioServerTransport`), the child process's standard output (`stdout`) is strictly reserved for JSON-RPC framing and message payloads. Any unexpected output sent to `stdout` (such as debugging statements, logger banners, or third-party library logging) corrupts the protocol stream and immediately crashes or disconnects MCP client hosts.
+
+### Decision
+1. **Stdio Stream Isolation**: All diagnostics, lifecycle announcements, startup banners, error notices, and termination logs must strictly route to standard error (`stderr` / `console.error`).
+2. **Server Factory Separation**: Keep the server definition (`src/server.ts`) separate and pure from the runtime CLI entrypoint (`src/index.ts`).
+3. **Idempotent Signal Handling**: CLI signal traps (`SIGINT`, `SIGTERM`) implement an `isShuttingDown` guard to ensure clean, one-time server teardown without race conditions.
+
+### Consequences
+- **Positive**:
+  - 100% protocol integrity across all MCP client hosts (Claude Desktop, Cursor, Antigravity CLI).
+  - Clean error diagnostics visible to operators in client log panels via `stderr`.
+- **Negative**:
+  - Developers and agents must never use `console.log` in server or domain code.
+
+---
+
+## ADR-014: OpenProject OpenAPI Specification Discovery
+
+### Status
+Accepted
+
+### Context
+OpenProject REST API v3 provides dynamic, instance-specific OpenAPI 3.0 schema definitions at `/api/v3/openapi.json`. LLM agents and tooling benefit from discovering API capabilities, endpoints, and data schemas dynamically from the connected instance.
+
+### Decision
+Support OpenAPI 3.0 specification retrieval as an MCP tool (`openproject_get_openapi_spec`) and client capability, allowing agents to introspect the complete OpenProject API definition.
+
+### Consequences
+- **Positive**:
+  - Enables dynamic tool generation, schema discovery, and self-documenting capabilities for LLM agents.
+  - Automatically adapts to installed OpenProject plugins and API extensions on target instances.
+- **Negative**:
+  - Requires handling large JSON payloads efficiently when requesting full OpenAPI definitions.
