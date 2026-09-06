@@ -112,9 +112,14 @@ Deploy `docker-compose.server.yml` with built-in health checking:
 ```bash
 # Start hosted MCP server on port 3000
 OPENPROJECT_BASE_URL="https://openproject.example.com" \
-HOST_PORT=3000 \
+docker compose -f docker-compose.server.yml up -d
+
+# Optionally override the published host port (e.g. host port 8080 -> container port 3000):
+HOST_PORT=8080 OPENPROJECT_BASE_URL="https://openproject.example.com" \
 docker compose -f docker-compose.server.yml up -d
 ```
+
+> **Note on adding to an existing compose file**: Inside the container, the service requires `PORT=3000` (under `environment:`) to activate HTTP/SSE server mode. `HOST_PORT` in `docker-compose.server.yml` is solely used for the outer host-side port mapping (`${HOST_PORT:-3000}:3000`).
 
 #### Run with Bun (from source)
 ```bash
