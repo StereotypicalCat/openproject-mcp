@@ -240,10 +240,11 @@ describe("OpenApi MCP Tool Registration & Execution", () => {
 
 describe("Live Container OpenAPI Integration", () => {
   const liveBaseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";
-  const liveApiKey = process.env.OPENPROJECT_API_KEY || "";
-  const liveClient = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey });
+  const liveApiKey = process.env.OPENPROJECT_API_KEY;
+  const runLiveTests = liveApiKey ? test : test.skip;
+  const liveClient = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey || "skip" });
 
-  test("live query returns OpenProject API summary with paths and tags", async () => {
+  runLiveTests("live query returns OpenProject API summary with paths and tags", async () => {
     const summary = (await getOpenApiSpec({}, liveClient)) as OpenApiSummary;
     expect(summary.title).toContain("OpenProject API");
     expect(summary.totalPaths).toBeGreaterThan(200);
@@ -251,7 +252,7 @@ describe("Live Container OpenAPI Integration", () => {
     expect(summary.availablePaths).toContain("/api/v3/work_packages");
   });
 
-  test("live query fetches operation details for /api/v3/work_packages", async () => {
+  runLiveTests("live query fetches operation details for /api/v3/work_packages", async () => {
     const res = (await getOpenApiSpec({ path: "/api/v3/work_packages" }, liveClient)) as {
       path: string;
       operations: {

@@ -1156,10 +1156,11 @@ describe("Tool Execution Wrapper", () => {
 
 describe("Live Container Integration (All 10 MCP Tools)", () => {
   const baseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";
-  const apiKey = process.env.OPENPROJECT_API_KEY || "";
-  const liveClient = new OpenProjectClient({ baseUrl, apiKey });
+  const apiKey = process.env.OPENPROJECT_API_KEY;
+  const runLiveTests = apiKey ? test : test.skip;
+  const liveClient = new OpenProjectClient({ baseUrl, apiKey: apiKey || "skip" });
 
-  test("live: list projects and get project tool execution", async () => {
+  runLiveTests("live: list projects and get project tool execution", async () => {
     await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
       const listRes = await handleListProjects({ pageSize: 5 });
       expect(listRes.isError).toBeUndefined();
@@ -1177,7 +1178,7 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
     });
   });
 
-  test("live: list work packages and get work package tool execution", async () => {
+  runLiveTests("live: list work packages and get work package tool execution", async () => {
     await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
       const listRes = await handleListWorkPackages({ pageSize: 5 });
       expect(listRes.isError).toBeUndefined();
@@ -1193,7 +1194,7 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
     });
   });
 
-  test("live: list queries and get query tool execution", async () => {
+  runLiveTests("live: list queries and get query tool execution", async () => {
     await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
       const listRes = await handleListQueries({});
       expect(listRes.isError).toBeUndefined();
@@ -1209,7 +1210,7 @@ describe("Live Container Integration (All 10 MCP Tools)", () => {
     });
   });
 
-  test("live: metadata tools execution (types, statuses, priorities, users)", async () => {
+  runLiveTests("live: metadata tools execution (types, statuses, priorities, users)", async () => {
     await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
       const typesRes = await handleListTypes({});
       expect(typesRes.isError).toBeUndefined();

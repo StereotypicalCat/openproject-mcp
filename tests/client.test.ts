@@ -531,16 +531,12 @@ describe("OpenProjectClient (Mocked Unit Tests)", () => {
 describe("OpenProject Live API Integration (Local Container)", () => {
   const liveBaseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";
   const liveApiKey = process.env.OPENPROJECT_API_KEY;
+  const runLiveTests = liveApiKey ? test : test.skip;
 
-  test("fetches projects and work packages against live instance", async () => {
-    if (!liveApiKey) {
-      console.warn("Skipping live container test: OPENPROJECT_API_KEY not set");
-      return;
-    }
-
+  runLiveTests("fetches projects and work packages against live instance", async () => {
     const client = new OpenProjectClient({
       baseUrl: liveBaseUrl,
-      apiKey: liveApiKey,
+      apiKey: liveApiKey!,
     });
 
     // 1. Fetch projects
@@ -582,7 +578,7 @@ describe("OpenProject Live API Integration (Local Container)", () => {
     expect(priorities.items.length).toBeGreaterThan(0);
   });
 
-  test("live 401 authentication failure with invalid key", async () => {
+  runLiveTests("live 401 authentication failure with invalid key", async () => {
     const client = new OpenProjectClient({
       baseUrl: liveBaseUrl,
       apiKey: "definitely-invalid-key-9999",
@@ -593,12 +589,10 @@ describe("OpenProject Live API Integration (Local Container)", () => {
     );
   });
 
-  test("live 404 not found failure with non-existent project", async () => {
-    if (!liveApiKey) return;
-
+  runLiveTests("live 404 not found failure with non-existent project", async () => {
     const client = new OpenProjectClient({
       baseUrl: liveBaseUrl,
-      apiKey: liveApiKey,
+      apiKey: liveApiKey!,
     });
 
     await expect(client.get("/api/v3/projects/9999999")).rejects.toBeInstanceOf(

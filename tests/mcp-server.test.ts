@@ -190,10 +190,11 @@ describe("MCP Server Factory", () => {
 
 describe("End-to-End Live Tool Calling over MCP Client", () => {
   const baseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";
-  const apiKey = process.env.OPENPROJECT_API_KEY || "";
+  const apiKey = process.env.OPENPROJECT_API_KEY;
+  const runLiveTests = apiKey ? test : test.skip;
 
-  test("calls openproject_list_projects and openproject_get_work_package via Client", async () => {
-    const mcpServer = createServer({ baseUrl, apiKey, readOnly: false });
+  runLiveTests("calls openproject_list_projects and openproject_get_work_package via Client", async () => {
+    const mcpServer = createServer({ baseUrl, apiKey: apiKey || "skip", readOnly: false });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await mcpServer.start(serverTransport);
 
@@ -230,8 +231,8 @@ describe("End-to-End Live Tool Calling over MCP Client", () => {
     }
   });
 
-  test("tool error propagation returns isError: true without crashing client", async () => {
-    const mcpServer = createServer({ baseUrl, apiKey, readOnly: false });
+  runLiveTests("tool error propagation returns isError: true without crashing client", async () => {
+    const mcpServer = createServer({ baseUrl, apiKey: apiKey || "skip", readOnly: false });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await mcpServer.start(serverTransport);
 
