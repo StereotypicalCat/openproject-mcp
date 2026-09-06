@@ -13,24 +13,28 @@ import { projectTools } from "./projects";
 import { workPackageTools } from "./work-packages";
 import { queryTools } from "./queries";
 import { metadataTools } from "./metadata";
+import { openApiTools } from "./openapi";
 
 export * from "./common";
 export * from "./projects";
 export * from "./work-packages";
 export * from "./queries";
 export * from "./metadata";
+export * from "./openapi";
 
 export type AnyToolDefinition =
   | (typeof projectTools)[number]
   | (typeof workPackageTools)[number]
   | (typeof queryTools)[number]
-  | (typeof metadataTools)[number];
+  | (typeof metadataTools)[number]
+  | (typeof openApiTools)[number];
 
 export const allTools: AnyToolDefinition[] = [
   ...projectTools,
   ...workPackageTools,
   ...queryTools,
   ...metadataTools,
+  ...openApiTools,
 ];
 
 export interface RegisterToolsOptions {

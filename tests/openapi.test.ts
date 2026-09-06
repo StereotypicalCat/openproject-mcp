@@ -1,4 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   getOpenApiSpec,
   clearOpenApiCache,
@@ -7,57 +10,63 @@ import {
 import { OpenProjectClient } from "../src/client/api-client.ts";
 import { OpenProjectNotFoundError } from "../src/client/errors.ts";
 import { runWithContext } from "../src/context.ts";
+import {
+  getOpenApiSpecTool,
+  registerOpenApiTools,
+} from "../src/tools/openapi.ts";
+import { allTools } from "../src/tools/index.ts";
+
+const mockSpec = {
+  openapi: "3.0.3",
+  info: { title: "OpenProject API V3 (Test)", version: "3" },
+  paths: {
+    "/api/v3/work_packages": {
+      get: {
+        summary: "List work packages",
+        operationId: "list_work_packages",
+        tags: ["Work Packages"],
+        parameters: [{ name: "offset", in: "query" }],
+        responses: { "200": { description: "OK" } },
+      },
+      post: {
+        summary: "Create work package",
+        operationId: "create_work_package",
+        tags: ["Work Packages"],
+        responses: { "201": { description: "Created" } },
+      },
+    },
+    "/api/v3/projects": {
+      get: {
+        summary: "List projects",
+        operationId: "list_projects",
+        tags: ["Projects"],
+        responses: { "200": { description: "OK" } },
+      },
+    },
+  },
+  components: {
+    schemas: {
+      WorkPackageModel: {
+        type: "object",
+        properties: { id: { type: "integer" }, subject: { type: "string" } },
+      },
+    },
+  },
+};
+
+let getCallCount = 0;
+const mockClient = {
+  baseUrl: "http://mock-openproject.local",
+  get: async (path: string) => {
+    getCallCount++;
+    if (path.includes("openapi.json")) {
+      return mockSpec;
+    }
+    throw new Error("Not found");
+  },
+} as unknown as OpenProjectClient;
 
 describe("OpenApi Service", () => {
-  const mockSpec = {
-    openapi: "3.0.3",
-    info: { title: "OpenProject API V3 (Test)", version: "3" },
-    paths: {
-      "/api/v3/work_packages": {
-        get: {
-          summary: "List work packages",
-          operationId: "list_work_packages",
-          tags: ["Work Packages"],
-          parameters: [{ name: "offset", in: "query" }],
-          responses: { "200": { description: "OK" } },
-        },
-        post: {
-          summary: "Create work package",
-          operationId: "create_work_package",
-          tags: ["Work Packages"],
-          responses: { "201": { description: "Created" } },
-        },
-      },
-      "/api/v3/projects": {
-        get: {
-          summary: "List projects",
-          operationId: "list_projects",
-          tags: ["Projects"],
-          responses: { "200": { description: "OK" } },
-        },
-      },
-    },
-    components: {
-      schemas: {
-        WorkPackageModel: {
-          type: "object",
-          properties: { id: { type: "integer" }, subject: { type: "string" } },
-        },
-      },
-    },
-  };
-
-  let getCallCount = 0;
-  const mockClient = {
-    baseUrl: "http://mock-openproject.local",
-    get: async (path: string) => {
-      getCallCount++;
-      if (path.includes("openapi.json")) {
-        return mockSpec;
-      }
-      throw new Error("Not found");
-    },
-  } as unknown as OpenProjectClient;
 
   beforeEach(() => {
     clearOpenApiCache();
@@ -159,3 +168,73 @@ describe("OpenApi Service", () => {
     );
   });
 });
+
+describe("OpenApi MCP Tool Registration & Execution", () => {
+  beforeEach(() => {
+    clearOpenApiCache();
+    getCallCount = 0;
+  });
+
+  test("getOpenApiSpecTool is marked readOnly: true and exposes proper schema", () => {
+    expect(getOpenApiSpecTool.name).toBe("openproject_get_openapi_spec");
+    expect(getOpenApiSpecTool.readOnly).toBe(true);
+    expect(getOpenApiSpecTool.parameters).toBeDefined();
+  });
+
+  test("executes openproject_get_openapi_spec tool via MCP Client inside RequestContext", async () => {
+    const server = new McpServer({ name: "openapi-test", version: "1.0.0" });
+    registerOpenApiTools(server);
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+
+    const client = new Client({ name: "client", version: "1.0.0" });
+    await client.connect(clientTransport);
+
+    const res = (await runWithContext({ client: mockClient, isReadOnly: true }, async () => {
+      return client.callTool({
+        name: "openproject_get_openapi_spec",
+        arguments: { tag: "Work Packages" },
+      });
+    })) as { content: Array<{ type: string; text: string }>; isError?: boolean };
+
+    expect(res.isError).toBeFalsy();
+    const data = JSON.parse(res.content[0]?.text ?? "{}");
+    expect(data.tag).toBe("Work Packages");
+    expect(data.totalPaths).toBe(1);
+
+    await client.close();
+    await server.close();
+  });
+
+  test("executes openproject_get_openapi_spec tool handling error when target not found", async () => {
+    const server = new McpServer({ name: "openapi-test", version: "1.0.0" });
+    registerOpenApiTools(server);
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+
+    const client = new Client({ name: "client", version: "1.0.0" });
+    await client.connect(clientTransport);
+
+    const res = (await runWithContext({ client: mockClient, isReadOnly: true }, async () => {
+      return client.callTool({
+        name: "openproject_get_openapi_spec",
+        arguments: { path: "/api/v3/nonexistent" },
+      });
+    })) as { content: Array<{ type: string; text: string }>; isError?: boolean };
+
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text).toContain("OpenAPI path '/api/v3/nonexistent' not found");
+
+    await client.close();
+    await server.close();
+  });
+
+  test("allTools includes openproject_get_openapi_spec (total: 11 tools)", () => {
+    const toolNames = allTools.map((t) => t.name);
+    expect(toolNames).toContain("openproject_get_openapi_spec");
+    expect(allTools).toHaveLength(11);
+  });
+});
+
