@@ -73,12 +73,12 @@
     - [x] `openproject_list_priorities`
     - [x] `openproject_list_users`
 
-- [ ] **Task 4: MCP Stdio Server Assembly & Integration**
-  - [ ] Wire domain tools into `@modelcontextprotocol/sdk` Server using `StdioServerTransport` in `src/server.ts` and `src/index.ts`.
-  - [ ] Implement read-only mode tool filtering (omits mutating tools when `readOnly` is enabled) and execution guard (`SERVER_READ_ONLY`).
-  - [ ] Ensure all logging is strictly redirected to `stderr`.
-  - [ ] Add end-to-end integration tests in `tests/mcp-server.test.ts` verifying tool calling against the running OpenProject 17 instance.
-  - [ ] Add read-only mode verification tests in `tests/read-only.test.ts`.
+- [x] **Task 4: MCP Stdio Server Assembly & Integration**
+  - [x] Wire domain tools into `@modelcontextprotocol/sdk` Server using `StdioServerTransport` in `src/server.ts` and `src/index.ts`.
+  - [x] Implement read-only mode tool filtering (omits mutating tools when `readOnly` is enabled) and execution guard (`SERVER_READ_ONLY`).
+  - [x] Ensure all logging is strictly redirected to `stderr`.
+  - [x] Add end-to-end integration tests in `tests/mcp-server.test.ts` verifying tool calling against the running OpenProject 17 instance.
+  - [x] Add read-only mode verification tests in `tests/read-only.test.ts`.
 
 ---
 

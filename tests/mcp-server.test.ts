@@ -186,3 +186,67 @@ describe("MCP Server Factory", () => {
     errorSpy.mockRestore();
   });
 });
+
+describe("End-to-End Live Tool Calling over MCP Client", () => {
+  const baseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";
+  const apiKey = process.env.OPENPROJECT_API_KEY || "";
+
+  test("calls openproject_list_projects and openproject_get_work_package via Client", async () => {
+    const mcpServer = createServer({ baseUrl, apiKey, readOnly: false });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await mcpServer.start(serverTransport);
+
+    const client = new Client({ name: "test-runner", version: "1" });
+    await client.connect(clientTransport);
+
+    // Call openproject_list_projects
+    const projRes = (await client.callTool({
+      name: "openproject_list_projects",
+      arguments: { pageSize: 5 },
+    })) as {
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    };
+    expect(projRes.isError).toBeFalsy();
+    const projData = JSON.parse(projRes.content[0]?.text ?? "{}");
+    expect(projData.projects.length).toBeGreaterThan(0);
+
+    // Call openproject_get_work_package
+    const wpRes = (await client.callTool({
+      name: "openproject_get_work_package",
+      arguments: { workPackageId: 38 },
+    })) as {
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    };
+    expect(wpRes.isError).toBeFalsy();
+    const wpData = JSON.parse(wpRes.content[0]?.text ?? "{}");
+    expect(wpData.id).toBe(38);
+
+    await client.close();
+    await mcpServer.stop();
+  });
+
+  test("tool error propagation returns isError: true without crashing client", async () => {
+    const mcpServer = createServer({ baseUrl, apiKey, readOnly: false });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await mcpServer.start(serverTransport);
+
+    const client = new Client({ name: "test-runner", version: "1" });
+    await client.connect(clientTransport);
+
+    const errRes = (await client.callTool({
+      name: "openproject_get_project",
+      arguments: { projectId: 999999 },
+    })) as {
+      content: Array<{ type: string; text: string }>;
+      isError?: boolean;
+    };
+    expect(errRes.isError).toBe(true);
+    expect(errRes.content[0]?.text).toContain("OPENPROJECT_NOT_FOUND");
+
+    await client.close();
+    await mcpServer.stop();
+  });
+});
+

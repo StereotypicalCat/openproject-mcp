@@ -1,8 +1,42 @@
+#!/usr/bin/env bun
 /**
  * openproject-mcp - Model Context Protocol Server for OpenProject
  */
 
-export const SERVER_NAME = "openproject-mcp";
-export const SERVER_VERSION = "0.1.0";
+import { parseConfig } from "./config";
+import { createServer } from "./server";
 
-console.error(`[${SERVER_NAME}] Initialized MCP companion server stub v${SERVER_VERSION}`);
+async function main(): Promise<void> {
+  try {
+    const config = parseConfig(process.env, process.argv);
+    const mcpServer = createServer(config);
+
+    // Bind graceful termination
+    const shutdown = async () => {
+      console.error("\n[openproject-mcp] Received termination signal, shutting down...");
+      await mcpServer.stop();
+      process.exit(0);
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+
+    // Start server over stdio transport
+    await mcpServer.start();
+  } catch (error) {
+    console.error(
+      "[openproject-mcp] Fatal startup error:",
+      error instanceof Error ? error.message : error
+    );
+    process.exit(1);
+  }
+}
+
+// Only execute when invoked directly as a script
+if (import.meta.main) {
+  main();
+}
+
+export { createServer } from "./server";
+export { SERVER_NAME, SERVER_VERSION } from "./server";
+
