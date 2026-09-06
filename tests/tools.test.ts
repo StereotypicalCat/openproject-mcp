@@ -29,6 +29,18 @@ import {
   queryTools,
   registerQueryTools,
 } from "../src/tools/queries";
+import {
+  listTypesShape,
+  handleListTypes,
+  listStatusesShape,
+  handleListStatuses,
+  listPrioritiesShape,
+  handleListPriorities,
+  listUsersShape,
+  handleListUsers,
+  metadataTools,
+  registerMetadataTools,
+} from "../src/tools/metadata";
 import { OpenProjectNotFoundError } from "../src/client/errors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -653,6 +665,267 @@ describe("Query Tools", () => {
 
     expect(registeredTools["openproject_list_queries"]).toBeDefined();
     expect(registeredTools["openproject_get_query"]).toBeDefined();
+  });
+});
+
+describe("Metadata Tools", () => {
+  const dummyClient = {
+    get: async (path: string) => {
+      if (
+        path === "types" ||
+        path === "/api/v3/types" ||
+        path === "projects/4/types" ||
+        path === "projects/mcp-test-project/types"
+      ) {
+        return {
+          _embedded: {
+            elements: [
+              {
+                id: 1,
+                name: "Task",
+                color: "#1a73e8",
+                isDefault: true,
+                isMilestone: false,
+                _links: { self: { href: "/api/v3/types/1" } },
+              },
+            ],
+          },
+          total: 1,
+          count: 1,
+          pageSize: 20,
+          offset: 1,
+        };
+      }
+      if (path === "statuses" || path === "/api/v3/statuses") {
+        return {
+          _embedded: {
+            elements: [
+              {
+                id: 1,
+                name: "New",
+                isClosed: false,
+                isDefault: true,
+                color: "#34a853",
+                _links: { self: { href: "/api/v3/statuses/1" } },
+              },
+            ],
+          },
+          total: 1,
+          count: 1,
+          pageSize: 20,
+          offset: 1,
+        };
+      }
+      if (path === "priorities" || path === "/api/v3/priorities") {
+        return {
+          _embedded: {
+            elements: [
+              {
+                id: 1,
+                name: "Normal",
+                isDefault: true,
+                _links: { self: { href: "/api/v3/priorities/1" } },
+              },
+            ],
+          },
+          total: 1,
+          count: 1,
+          pageSize: 20,
+          offset: 1,
+        };
+      }
+      if (path === "users" || path === "/api/v3/users") {
+        return {
+          _embedded: {
+            elements: [
+              {
+                id: 1,
+                name: "OpenProject Admin",
+                email: "admin@example.com",
+                status: "active",
+                admin: true,
+                _links: { self: { href: "/api/v3/users/1" } },
+              },
+            ],
+          },
+          total: 1,
+          count: 1,
+          pageSize: 20,
+          offset: 1,
+        };
+      }
+      return { _embedded: { elements: [] }, total: 0, count: 0 };
+    },
+  } as unknown as OpenProjectClient;
+
+  test("listTypes returns types collection", async () => {
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListTypes({})
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.types).toHaveLength(1);
+    expect(result.types[0].name).toBe("Task");
+  });
+
+  test("listTypes accepts string and numeric projectId", async () => {
+    const schema = z.object(listTypesShape);
+    const parsedNum = schema.parse({ projectId: 4 });
+    const responseNum = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListTypes(parsedNum)
+    );
+    expect(responseNum.isError).toBeUndefined();
+    const resultNum = JSON.parse(responseNum.content[0]?.text ?? "{}");
+    expect(resultNum.types).toHaveLength(1);
+
+    const parsedStr = schema.parse({ projectId: "mcp-test-project" });
+    const responseStr = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListTypes(parsedStr)
+    );
+    expect(responseStr.isError).toBeUndefined();
+    const resultStr = JSON.parse(responseStr.content[0]?.text ?? "{}");
+    expect(resultStr.types).toHaveLength(1);
+  });
+
+  test("listTypes rejects invalid projectId schema arguments", () => {
+    const schema = z.object(listTypesShape);
+    expect(() => schema.parse({ projectId: 0 })).toThrow();
+    expect(() => schema.parse({ projectId: -1 })).toThrow();
+    expect(() => schema.parse({ projectId: "" })).toThrow();
+  });
+
+  test("handleListTypes catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Types service failure");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleListTypes({})
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Types service failure");
+  });
+
+  test("listStatuses returns status items", async () => {
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListStatuses({})
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.statuses).toHaveLength(1);
+    expect(result.statuses[0].name).toBe("New");
+  });
+
+  test("handleListStatuses catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Statuses service failure");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleListStatuses({})
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Statuses service failure");
+  });
+
+  test("listPriorities returns priority items", async () => {
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListPriorities({})
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.priorities).toHaveLength(1);
+    expect(result.priorities[0].name).toBe("Normal");
+  });
+
+  test("handleListPriorities catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Priorities service failure");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleListPriorities({})
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Priorities service failure");
+  });
+
+  test("listUsers returns paginated user list", async () => {
+    const schema = z.object(listUsersShape);
+    const parsed = schema.parse({ pageSize: 10, offset: 1 });
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListUsers(parsed)
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.users).toHaveLength(1);
+    expect(result.users[0].name).toBe("OpenProject Admin");
+    expect(result.total).toBe(1);
+    expect(result.count).toBe(1);
+    expect(result.pageSize).toBe(20);
+    expect(result.offset).toBe(1);
+  });
+
+  test("listUsers rejects invalid schema arguments", () => {
+    const schema = z.object(listUsersShape);
+    expect(() => schema.parse({ pageSize: 0 })).toThrow();
+    expect(() => schema.parse({ pageSize: -1 })).toThrow();
+    expect(() => schema.parse({ pageSize: 500 })).toThrow();
+    expect(() => schema.parse({ offset: 0 })).toThrow();
+    expect(() => schema.parse({ offset: -1 })).toThrow();
+  });
+
+  test("handleListUsers catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Users service failure");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleListUsers({ pageSize: 10 })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Users service failure");
+  });
+
+  test("registerMetadataTools registers all 4 metadata tools", () => {
+    const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
+    registerMetadataTools(server);
+    expect(metadataTools).toHaveLength(4);
+    expect(metadataTools.map((t) => t.name)).toEqual([
+      "openproject_list_types",
+      "openproject_list_statuses",
+      "openproject_list_priorities",
+      "openproject_list_users",
+    ]);
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<string, unknown>;
+      }
+    )._registeredTools;
+
+    expect(registeredTools["openproject_list_types"]).toBeDefined();
+    expect(registeredTools["openproject_list_statuses"]).toBeDefined();
+    expect(registeredTools["openproject_list_priorities"]).toBeDefined();
+    expect(registeredTools["openproject_list_users"]).toBeDefined();
   });
 });
 
