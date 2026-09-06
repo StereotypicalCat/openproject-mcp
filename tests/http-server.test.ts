@@ -243,6 +243,27 @@ describe("Hosted Remote MCP Server (HTTP/SSE)", () => {
     expect(res.headers.get("access-control-allow-methods")).toContain("GET");
   });
 
+  test("GET /sse falls back to config.apiKey when configured on server", async () => {
+    const singleTenantServer = await startHttpServer({
+      baseUrl: "https://mock.openproject.example.com",
+      readOnly: true,
+      port: 0,
+      host: "127.0.0.1",
+      apiKey: "server-configured-key",
+    });
+
+    const res = await fetch(`http://127.0.0.1:${singleTenantServer.port}/sse`, {
+      headers: { Accept: "text/event-stream" },
+    });
+    expect(res.status).toBe(200);
+    const reader = res.body?.getReader();
+    const { value } = await reader!.read();
+    const text = new TextDecoder().decode(value);
+    expect(text).toContain("event: endpoint");
+    await reader!.cancel();
+    await singleTenantServer.stop();
+  });
+
   test("concurrent clients with different API keys maintain isolated sessions", async () => {
     // Client A
     const resA = await fetch(`${serverUrl}/sse?apiKey=user-a-secret`, {

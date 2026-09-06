@@ -37,7 +37,11 @@ export interface HttpServerInstance {
  * 2. X-OpenProject-Api-Key: <key>
  * 3. ?apiKey=<key> query parameter
  */
-export function extractApiKey(req: Request, url: URL): string | undefined {
+export function extractApiKey(
+  req: Request,
+  url: URL,
+  defaultApiKey?: string
+): string | undefined {
   const authHeader = req.headers.get("authorization");
   if (authHeader) {
     const match = authHeader.match(/^Bearer\s+(.+)$/i);
@@ -54,6 +58,10 @@ export function extractApiKey(req: Request, url: URL): string | undefined {
   const queryKey = url.searchParams.get("apiKey");
   if (queryKey && queryKey.trim().length > 0) {
     return queryKey.trim();
+  }
+
+  if (defaultApiKey && defaultApiKey.trim().length > 0) {
+    return defaultApiKey.trim();
   }
 
   return undefined;
@@ -192,7 +200,7 @@ export async function startHttpServer(config: AppConfig): Promise<HttpServerInst
           });
         }
 
-        const apiKey = extractApiKey(req, url);
+        const apiKey = extractApiKey(req, url, config.apiKey);
         if (!apiKey) {
           return new Response(
             JSON.stringify({
