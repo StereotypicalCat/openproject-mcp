@@ -35,7 +35,7 @@
   - `ToolDefinition<TShape>` interface: `{ name: string; description: string; schema?: TShape; readOnly: boolean; execute: (args: any) => Promise<McpToolResponse> }`
   - `registerTool(server: McpServer, tool: ToolDefinition<any>): void`
 
-- [ ] **Step 1: Write failing tests for common tool utilities**
+- [x] **Step 1: Write failing tests for common tool utilities**
 
 In `tests/tools.test.ts`:
 ```typescript
@@ -70,12 +70,12 @@ describe("Tool Utilities", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/tools.test.ts`
 Expected: FAIL with module `../src/tools/common` not found.
 
-- [ ] **Step 3: Implement minimal code for common tool utilities**
+- [x] **Step 3: Implement minimal code for common tool utilities**
 
 In `src/tools/common.ts`:
 ```typescript
@@ -142,12 +142,12 @@ export function registerTool(server: McpServer, tool: ToolDefinition<any>): void
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/tools.test.ts`
 Expected: PASS (3 pass).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/common.ts tests/tools.test.ts
@@ -174,7 +174,7 @@ git commit -m "feat(tools): add common tool utilities, types, and error formatti
   - `projectTools`: ToolDefinition[]
   - `registerProjectTools(server: McpServer): void`
 
-- [ ] **Step 1: Write failing tests for project tools**
+- [x] **Step 1: Write failing tests for project tools**
 
 In `tests/tools.test.ts`:
 ```typescript
@@ -282,12 +282,12 @@ describe("Project Tools", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/tools.test.ts`
 Expected: FAIL with module `../src/tools/projects` not found.
 
-- [ ] **Step 3: Implement project tools**
+- [x] **Step 3: Implement project tools**
 
 In `src/tools/projects.ts`:
 ```typescript
@@ -350,12 +350,12 @@ export function registerProjectTools(server: McpServer): void {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/tools.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/projects.ts tests/tools.test.ts
@@ -382,7 +382,7 @@ git commit -m "feat(tools): implement project tools and registration"
   - `workPackageTools`: ToolDefinition[]
   - `registerWorkPackageTools(server: McpServer): void`
 
-- [ ] **Step 1: Write failing tests for work package tools**
+- [x] **Step 1: Write failing tests for work package tools**
 
 In `tests/tools.test.ts`:
 ```typescript
@@ -479,12 +479,12 @@ describe("Work Package Tools", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/tools.test.ts`
 Expected: FAIL with module `../src/tools/work-packages` not found.
 
-- [ ] **Step 3: Implement work package tools**
+- [x] **Step 3: Implement work package tools**
 
 In `src/tools/work-packages.ts`:
 ```typescript
@@ -552,12 +552,12 @@ export function registerWorkPackageTools(server: McpServer): void {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/tools.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tools/work-packages.ts tests/tools.test.ts
