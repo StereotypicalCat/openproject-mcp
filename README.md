@@ -2,7 +2,7 @@
 
 `openproject-mcp` is a Model Context Protocol (MCP) server that connects AI assistants (such as Claude Desktop, Cursor, and Antigravity) to [OpenProject](https://github.com/opf/openproject) via OpenProject's REST API v3.
 
-It allows agents to browse, query, and reason about OpenProject workspaces using personal API keys over standard MCP transports (stdio).
+It allows agents to browse, query, and reason about OpenProject workspaces using personal API keys over standard MCP transports (stdio and HTTP/SSE).
 
 ---
 
@@ -16,6 +16,7 @@ It allows agents to browse, query, and reason about OpenProject workspaces using
 - **HAL+JSON Normalization**: Converts OpenProject's verbose HAL+JSON representations into concise, token-efficient structures.
 - **Secure Authentication**: Uses OpenProject Personal API tokens via HTTP Basic Auth (`apikey:<token>`) with zero credential storage inside the codebase.
 - **Multi-Platform Docker Images**: Official multi-architecture images (`linux/amd64` and `linux/arm64`) published to GitHub Container Registry (`ghcr.io`).
+- **Hosted Remote MCP Server**: Run as a shared multi-tenant server over HTTP/SSE with Docker Compose, allowing multiple users and AI clients (Cursor, Claude Desktop, autonomous agents) to connect with their own personal API keys.
 
 ---
 

@@ -55,6 +55,7 @@ The system is organized into four modular layers:
 - **Responsibility**: Manages the MCP connection lifecycle, tool definitions, input validation, and JSON-RPC dispatching.
 - **Protocol**: MCP specification implemented via `@modelcontextprotocol/sdk`.
 - **Default Transport**: `StdioServerTransport` for local integration with desktop clients and CLI tools.
+- **Remote Transport**: Native `Bun.serve` HTTP/SSE server (`src/http-server.ts`) supporting multi-tenant sessions over Server-Sent Events (`text/event-stream`).
 - **Schema Validation**: Each tool declares its arguments using Zod schemas, automatically generating standard JSON Schema definitions for the LLM.
 
 ### 2.2. Domain Services / Tool Providers
@@ -114,16 +115,21 @@ The server is architected from the ground up to support concurrent, multi-user o
 - **Security**: Complete isolation. Zero network ports exposed.
 
 #### Model B: Centralized Shared Server (SSE / HTTP Transport)
-- **Deployment**: A single shared `openproject-mcp` daemon runs centrally for a team or cluster.
+- **Deployment**: A single shared `openproject-mcp` daemon runs centrally for a team or cluster (via `docker-compose.server.yml` or `PORT=3000`).
 - **Isolation**: Connection and request-level isolation.
-- **Credential Delivery via Headers**:
-  - Each connecting client supplies their OpenProject API token via standard HTTP headers during connection handshake and request dispatch:
-    - `Authorization: Basic base64(apikey:<USER_API_KEY>)`, or
-    - `X-OpenProject-API-Key: <USER_API_KEY>`
-    - Optional: `X-OpenProject-Read-Only: true`
-  - The transport layer extracts the credentials, instantiates an ephemeral scoped `OpenProjectClient`, and executes tool calls inside `requestContextStorage.run(context, ...)`.
+- **Endpoints**:
+  - `GET /health`: Health probe returning server status and mode.
+  - `GET /sse`: Persistent SSE stream establishing an isolated session.
+  - `POST /messages?sessionId=<uuid>`: JSON-RPC message ingestion routed to the active session.
+- **Credential Delivery & Extraction Precedence**:
+  - Each connecting client supplies their OpenProject API token via:
+    1. `Authorization: Bearer <key>`
+    2. `X-OpenProject-Api-Key: <key>`
+    3. `?apiKey=<key>` query parameter
+  - Unauthenticated connection requests are rejected immediately with HTTP 401 Unauthorized.
+  - The transport layer instantiates an ephemeral, per-session `OpenProjectClient` and executes tool calls inside `runWithContext({ client, isReadOnly }, ...)`.
 - **RBAC Enforcement**: All calls execute against OpenProject REST API v3 using that specific user's token. OpenProject's internal Role-Based Access Control guarantees users only retrieve projects and work packages they have permission to access.
-- **Lifecycle**: Ephemeral client instances and tokens reside only in active session memory and are garbage collected upon connection close.
+- **Lifecycle & Memory Safety**: Abort signal listeners (`req.signal`) and stream cancellation handlers evict closed sessions from active memory, guaranteeing zero memory leaks.
 
 ---
 
@@ -190,10 +196,16 @@ openproject-mcp/
 ├── docs/
 │   ├── ARCHITECTURE.md          # System architecture and specifications
 │   ├── DECISIONS.md             # Architecture Decision Records (ADR)
+│   ├── plans/                   # Implementation plans
+│   ├── specs/                   # Technical designs and specifications
 │   └── TODO.md                  # Task tracking and roadmap
+├── docker-compose.yml           # Local OpenProject 17 testing stack
+├── docker-compose.server.yml    # Production hosted remote MCP server stack
+├── Dockerfile                   # Multi-stage container image definition
 ├── src/
-│   ├── index.ts                 # CLI entry point and startup
-│   ├── server.ts                # MCP server instance & tool registration
+│   ├── index.ts                 # Dual-transport CLI entry point (stdio & HTTP)
+│   ├── server.ts                # Stdio MCP server factory & tool registration
+│   ├── http-server.ts           # Hosted HTTP/SSE multi-tenant server (Bun.serve)
 │   ├── context.ts               # RequestContext & AsyncLocalStorage
 │   ├── client/
 │   │   ├── api-client.ts        # OpenProject REST API v3 HTTP client
@@ -206,15 +218,28 @@ openproject-mcp/
 │   │   ├── projects.ts          # Projects domain service
 │   │   ├── work-packages.ts     # Work packages domain service
 │   │   ├── queries.ts           # Queries domain service
-│   │   └── metadata.ts          # Types, statuses, priorities, users
+│   │   ├── metadata.ts          # Types, statuses, priorities, users
+│   │   └── openapi.ts           # OpenAPI specification discovery & caching
 │   └── tools/
-│       ├── project-tools.ts     # MCP tool definitions for projects
-│       ├── work-package-tools.ts# MCP tool definitions for work packages
-│       └── metadata-tools.ts    # MCP tool definitions for metadata
+│       ├── common.ts            # Common schemas and error formatters
+│       ├── index.ts             # Tool registration and execution wrapper
+│       ├── metadata.ts          # MCP tool definitions for metadata
+│       ├── openapi.ts           # MCP tool definition for OpenAPI introspection
+│       ├── projects.ts          # MCP tool definitions for projects
+│       ├── queries.ts           # MCP tool definitions for saved queries
+│       └── work-packages.ts     # MCP tool definitions for work packages
 ├── tests/
 │   ├── fixtures/                # HAL+JSON mock fixtures
 │   ├── client.test.ts           # OpenProject client unit tests
-│   └── tools.test.ts            # MCP tool integration tests
+│   ├── config.test.ts           # Configuration loader unit tests
+│   ├── docker.test.ts           # Docker packaging and compose tests
+│   ├── http-server.test.ts      # Hosted HTTP/SSE server and protocol tests
+│   ├── mcp-server.test.ts       # MCP server stdio integration tests
+│   ├── openapi.test.ts          # OpenAPI service and tool tests
+│   ├── read-only.test.ts        # Read-only execution mode guard tests
+│   ├── services.test.ts         # Domain services integration tests
+│   ├── smoke.test.ts            # Metadata and smoke tests
+│   └── tools.test.ts            # Tool registration unit tests
 ├── AGENTS.md                    # Operating guidelines for AI agents
 ├── package.json                 # Project dependencies and scripts
 ├── bun.lock                     # Bun dependency lockfile
@@ -225,7 +250,7 @@ openproject-mcp/
 
 ## 8. Future Roadmap
 
-- **Phase 1 (Current)**: Read/browse capability for projects, work packages, queries, and taxonomies with request-scoped context.
-- **Phase 2**: Mutating operations (create/update work packages, add comments, log time).
+- **Phase 1 (Completed)**: Read/browse capability for projects, work packages, queries, taxonomies, and OpenAPI introspection.
+- **Phase 4 (Completed)**: Hosted remote MCP server (HTTP/SSE transport via `Bun.serve`) with multi-tenant per-session credential scoping and Docker Compose deployment.
+- **Phase 2 (Upcoming)**: Mutating operations (create/update work packages, add comments, log time).
 - **Phase 3**: Attachment inspection and download resources.
-- **Phase 4**: SSE / Stream transport for remote multi-user server deployments.

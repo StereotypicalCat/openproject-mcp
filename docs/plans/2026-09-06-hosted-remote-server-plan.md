@@ -35,7 +35,7 @@
 - Consumes: `process.env`, CLI `process.argv`
 - Produces: Updated `AppConfig` interface and `loadConfig()` function supporting `port?: number`, `host?: string`, and optional `apiKey` when `port` is set.
 
-- [ ] **Step 1: Write failing tests in `tests/config.test.ts`**
+- [x] **Step 1: Write failing tests in `tests/config.test.ts`**
 
 ```typescript
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
@@ -100,12 +100,12 @@ describe("Configuration Loader (HTTP & Stdio Support)", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/config.test.ts`
 Expected: FAIL because `port`, `host`, and optional `apiKey` logic are not yet implemented in `src/config/index.ts`.
 
-- [ ] **Step 3: Update `src/config/index.ts`**
+- [x] **Step 3: Update `src/config/index.ts`**
 
 Update `AppConfig` and `loadConfig` in `src/config/index.ts`:
 - Add `port?: number` and `host?: string` to `AppConfig`.
@@ -115,12 +115,12 @@ Update `AppConfig` and `loadConfig` in `src/config/index.ts`:
   - If `port` is defined, `apiKey` is optional (does not throw if missing).
   - If `port` is undefined, require `apiKey` as before.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/config.test.ts`
 Expected: PASS (all 4 tests pass).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/config/index.ts tests/config.test.ts
@@ -148,7 +148,7 @@ git commit -m "feat(config): support port and host options for HTTP/SSE transpor
   export function startHttpServer(config: AppConfig): Promise<HttpServerInstance>;
   ```
 
-- [ ] **Step 1: Write failing tests in `tests/http-server.test.ts`**
+- [x] **Step 1: Write failing tests in `tests/http-server.test.ts`**
 
 ```typescript
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
@@ -258,12 +258,12 @@ describe("Hosted Remote MCP Server (HTTP/SSE)", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/http-server.test.ts`
 Expected: FAIL because `src/http-server.ts` does not exist yet.
 
-- [ ] **Step 3: Implement `src/http-server.ts`**
+- [x] **Step 3: Implement `src/http-server.ts`**
 
 Implement `src/http-server.ts`:
 - Parse API key from request:
@@ -277,12 +277,12 @@ Implement `src/http-server.ts`:
   - Cleanup sessions on client disconnect.
 - Export `startHttpServer`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/http-server.test.ts`
 Expected: PASS (all tests pass).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/http-server.ts tests/http-server.test.ts
@@ -304,7 +304,7 @@ git commit -m "feat(http): implement hosted remote MCP server with HTTP/SSE tran
 - Consumes: `src/http-server.ts`, `src/server.ts`, `src/config/index.ts`
 - Produces: Unified CLI entrypoint supporting both stdio and HTTP transports, production Docker Compose configuration, and updated documentation.
 
-- [ ] **Step 1: Wire `src/index.ts` for dual-transport execution**
+- [x] **Step 1: Wire `src/index.ts` for dual-transport execution**
 
 In `src/index.ts`:
 - Load config via `loadConfig()`.
@@ -314,7 +314,7 @@ In `src/index.ts`:
 - Else:
   - Run existing stdio server lifecycle.
 
-- [ ] **Step 2: Create `docker-compose.server.yml`**
+- [x] **Step 2: Create `docker-compose.server.yml`**
 
 Create `docker-compose.server.yml`:
 ```yaml
@@ -338,11 +338,11 @@ services:
       retries: 3
 ```
 
-- [ ] **Step 3: Record ADR-016 in `docs/DECISIONS.md`**
+- [x] **Step 3: Record ADR-016 in `docs/DECISIONS.md`**
 
 Record ADR-016 documenting the hosted remote server architecture, credential extraction strategy, and session lifecycle.
 
-- [ ] **Step 4: Update `README.md` and `docs/TODO.md`**
+- [x] **Step 4: Update `README.md` and `docs/TODO.md`**
 
 In `README.md`:
 - Add "Hosted Remote MCP Server (Docker Compose)" section showing how to deploy `docker-compose.server.yml`.
@@ -350,14 +350,14 @@ In `README.md`:
 In `docs/TODO.md`:
 - Mark Phase 4 (Remote Transport) completed.
 
-- [ ] **Step 5: Run full test suite and type check**
+- [x] **Step 5: Run full test suite and type check**
 
 Run:
 `bun run typecheck`
 `bun test`
 Expected: 0 type errors, all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/index.ts docker-compose.server.yml docs/DECISIONS.md docs/TODO.md README.md
