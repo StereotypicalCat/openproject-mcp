@@ -26,6 +26,91 @@ It allows agents to browse, query, and reason about OpenProject workspaces using
 
 ---
 
+## Running via Docker
+
+You can run `openproject-mcp` without installing Bun or cloning this repository by using the container image published to GitHub Container Registry (`ghcr.io`).
+
+### Docker Quickstart
+
+Run interactively with standard I/O streaming:
+
+```bash
+docker run -i --rm \
+  -e OPENPROJECT_BASE_URL="https://openproject.example.com" \
+  -e OPENPROJECT_API_KEY="your-api-key" \
+  ghcr.io/stereotypicalcat/openproject-mcp:latest
+```
+
+### Read-Only Mode
+
+To ensure the server strictly restricts capabilities to read-only queries and inspection:
+
+```bash
+docker run -i --rm \
+  -e OPENPROJECT_BASE_URL="https://openproject.example.com" \
+  -e OPENPROJECT_API_KEY="your-api-key" \
+  ghcr.io/stereotypicalcat/openproject-mcp:latest --read-only
+```
+
+*(Alternatively, pass `-e OPENPROJECT_READ_ONLY=true`.)*
+
+### MCP Client Configuration
+
+#### Claude Desktop
+
+Add the following to your `claude_desktop_config.json`:
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "openproject": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "OPENPROJECT_BASE_URL=https://openproject.example.com",
+        "-e",
+        "OPENPROJECT_API_KEY=your-api-key",
+        "ghcr.io/stereotypicalcat/openproject-mcp:latest",
+        "--read-only"
+      ]
+    }
+  }
+}
+```
+
+#### Cursor
+
+Add the following to `.cursor/mcp.json` (or Cursor Settings > Features > MCP):
+
+```json
+{
+  "mcpServers": {
+    "openproject": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "OPENPROJECT_BASE_URL=https://openproject.example.com",
+        "-e",
+        "OPENPROJECT_API_KEY=your-api-key",
+        "ghcr.io/stereotypicalcat/openproject-mcp:latest",
+        "--read-only"
+      ]
+    }
+  }
+}
+```
+
+---
+
 ## Quickstart: Local OpenProject Test Stack
 
 A complete OpenProject 17 environment with PostgreSQL 17 and Memcached is included via Docker Compose for local testing and agentic validation.

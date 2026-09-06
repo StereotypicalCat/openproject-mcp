@@ -88,6 +88,14 @@
   - [x] Add comprehensive test suite in `tests/openapi.test.ts` covering service methods, MCP client execution, error handling, and live OpenProject 17 container integration.
   - [x] Update suite regressions and assertions across all test suites (`tests/tools.test.ts`, `tests/read-only.test.ts`, `tests/mcp-server.test.ts`).
 
+- [x] **Task 6: Docker Container Packaging & CI/CD Pipeline**
+  - [x] Created multi-stage [Dockerfile](../Dockerfile) using `oven/bun:1-slim` builder and unprivileged `bun` user runner.
+  - [x] Created [.dockerignore](../.dockerignore) excluding secrets, local dependencies, test files, and docs from build context.
+  - [x] Implemented GitHub Actions CI workflow [.github/workflows/ci.yml](../.github/workflows/ci.yml) with automated type checking, testing, and multi-arch Docker image publishing (`linux/amd64`, `linux/arm64`) to `ghcr.io`.
+  - [x] Added automated test coverage in [tests/docker.test.ts](../tests/docker.test.ts) and [tests/ci-workflow.test.ts](../tests/ci-workflow.test.ts).
+  - [x] Recorded [ADR-015](DECISIONS.md#adr-015-docker-container-packaging-and-github-actions-cicd-pipeline).
+  - [x] Updated [README.md](../README.md) with Docker Quickstart, read-only mode instructions, and client integration settings (Claude Desktop & Cursor).
+
 ---
 
 ## 3. Backlog & Future Phases

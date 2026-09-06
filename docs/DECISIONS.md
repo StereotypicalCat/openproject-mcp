@@ -339,3 +339,27 @@ Support OpenAPI 3.0 specification retrieval as an MCP tool (`openproject_get_ope
   - Automatically adapts to installed OpenProject plugins and API extensions on target instances.
 - **Negative**:
   - Requires handling large JSON payloads efficiently when requesting full OpenAPI definitions.
+
+---
+
+## ADR-015: Docker Container Packaging and GitHub Actions CI/CD Pipeline
+
+### Status
+Accepted
+
+### Context
+Users and client LLM applications (such as Claude Desktop, Cursor, or containerized agents) require a lightweight, zero-dependency method to run `openproject-mcp` without manually installing Bun or local development dependencies. Furthermore, pull requests and releases require automated validation to guarantee that tests pass and container images are securely built and published to GitHub Container Registry (`ghcr.io`).
+
+### Decision
+1. **Runtime Base Image**: Adopt `oven/bun:1-slim` with a multi-stage Docker build. The builder stage installs production dependencies (`bun install --frozen-lockfile --production`), and the runner stage copies only production node_modules and application sources.
+2. **Security & Permissions**: Run container execution under the unprivileged `bun` user (UID 1000). Exclude sensitive environment files (`.env*`), git records, and local tokens via `.dockerignore`.
+3. **Multi-Architecture**: Build container images for both `linux/amd64` and `linux/arm64` via Docker Buildx and QEMU.
+4. **Interactive Stdio Execution**: Configure container `ENTRYPOINT ["bun", "run", "src/index.ts"]` with standard I/O streaming, allowing runtime options (such as `--read-only`) to be appended directly.
+5. **Continuous Integration**: Implement a two-stage GitHub Actions workflow (`.github/workflows/ci.yml`):
+   - `test`: Executes `bun run typecheck` and `bun test` on PRs and main pushes.
+   - `docker`: Builds multi-arch images with `type=gha` cache, publishing to `ghcr.io` on pushes to `main` and release tags (`v*.*.*`), while validating builds without push on pull requests.
+
+### Consequences
+- Provides seamless Docker execution for desktop and server MCP clients via `docker run -i --rm ghcr.io/<owner>/openproject-mcp:latest`.
+- Prevents container build regressions through automated PR verification.
+- Guarantees multi-architecture compatibility across Apple Silicon and x86_64 host machines.
