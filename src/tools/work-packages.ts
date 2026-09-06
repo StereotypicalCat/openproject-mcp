@@ -169,7 +169,6 @@ export const workPackageTools = [listWorkPackagesTool, getWorkPackageTool];
  * Registers all work package tools with an McpServer instance.
  */
 export function registerWorkPackageTools(server: McpServer): void {
-  for (const tool of workPackageTools) {
-    registerTool(server, tool);
-  }
+  registerTool(server, listWorkPackagesTool);
+  registerTool(server, getWorkPackageTool);
 }
