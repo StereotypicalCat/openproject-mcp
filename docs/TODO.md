@@ -58,6 +58,7 @@
   - [x] Implement `src/services/work-packages.ts` (`listWorkPackages`, `getWorkPackage`, `searchWorkPackages`).
   - [x] Implement `src/services/queries.ts` (`listQueries`, `getQuery`, `getQueryResults`).
   - [x] Implement `src/services/metadata.ts` (`listStatuses`, `listTypes`, `listPriorities`, `listUsers`).
+  - [x] Implement `src/services/openapi.ts` (`getOpenApiSpec` with in-memory caching, summary mode, path endpoint lookup, tag filtering, schema inspection).
   - [x] Add service tests in `tests/services.test.ts` (unit tests and live container integration suite passing).
 
 - [x] **Task 3: MCP Tool Definitions & Schema Registration**
@@ -72,6 +73,7 @@
     - [x] `openproject_list_statuses`
     - [x] `openproject_list_priorities`
     - [x] `openproject_list_users`
+    - [x] `openproject_get_openapi_spec`
 
 - [x] **Task 4: MCP Stdio Server Assembly & Integration**
   - [x] Wire domain tools into `@modelcontextprotocol/sdk` Server using `StdioServerTransport` in `src/server.ts` and `src/index.ts`.
@@ -79,6 +81,12 @@
   - [x] Ensure all logging is strictly redirected to `stderr`.
   - [x] Add end-to-end integration tests in `tests/mcp-server.test.ts` verifying tool calling against the running OpenProject 17 instance.
   - [x] Add read-only mode verification tests in `tests/read-only.test.ts`.
+
+- [x] **Task 5: OpenAPI Introspection Tool & Service**
+  - [x] Implement `src/services/openapi.ts` with in-memory caching, multi-mode queries (summary, path, tag, schema), and ambient client resolution.
+  - [x] Implement `src/tools/openapi.ts` registering `openproject_get_openapi_spec` (`readOnly: true`) into `allTools` (bringing tool count to 11).
+  - [x] Add comprehensive test suite in `tests/openapi.test.ts` covering service methods, MCP client execution, error handling, and live OpenProject 17 container integration.
+  - [x] Update suite regressions and assertions across all test suites (`tests/tools.test.ts`, `tests/read-only.test.ts`, `tests/mcp-server.test.ts`).
 
 ---
 

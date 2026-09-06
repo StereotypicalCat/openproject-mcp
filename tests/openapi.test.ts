@@ -238,3 +238,32 @@ describe("OpenApi MCP Tool Registration & Execution", () => {
   });
 });
 
+describe("Live Container OpenAPI Integration", () => {
+  const liveBaseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";
+  const liveApiKey = process.env.OPENPROJECT_API_KEY || "";
+  const liveClient = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey });
+
+  test("live query returns OpenProject API summary with paths and tags", async () => {
+    const summary = (await getOpenApiSpec({}, liveClient)) as OpenApiSummary;
+    expect(summary.title).toContain("OpenProject API");
+    expect(summary.totalPaths).toBeGreaterThan(200);
+    expect(summary.tags.length).toBeGreaterThan(30);
+    expect(summary.availablePaths).toContain("/api/v3/work_packages");
+  });
+
+  test("live query fetches operation details for /api/v3/work_packages", async () => {
+    const res = (await getOpenApiSpec({ path: "/api/v3/work_packages" }, liveClient)) as {
+      path: string;
+      operations: {
+        get?: {
+          parameters?: Array<{ name: string }>;
+        };
+      };
+    };
+    expect(res.operations.get).toBeDefined();
+    const paramNames = res.operations.get?.parameters?.map((p) => p.name) ?? [];
+    expect(paramNames).toContain("offset");
+    expect(paramNames).toContain("pageSize");
+  });
+});
+

@@ -955,8 +955,8 @@ describe("Metadata Tools", () => {
 });
 
 describe("Tool Registry", () => {
-  test("allTools contains exactly 10 Phase 1 tools", () => {
-    expect(allTools).toHaveLength(10);
+  test("allTools contains exactly 11 tools including OpenAPI spec", () => {
+    expect(allTools).toHaveLength(11);
     const names = allTools.map((t) => t.name);
     expect(names).toEqual([
       "openproject_list_projects",
@@ -969,6 +969,7 @@ describe("Tool Registry", () => {
       "openproject_list_statuses",
       "openproject_list_priorities",
       "openproject_list_users",
+      "openproject_get_openapi_spec",
     ]);
   });
 
@@ -978,7 +979,7 @@ describe("Tool Registry", () => {
     }
   });
 
-  test("registerAllTools registers all 10 tools on McpServer", () => {
+  test("registerAllTools registers all 11 tools on McpServer", () => {
     const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
     registerAllTools(server);
 
@@ -988,7 +989,7 @@ describe("Tool Registry", () => {
       }
     )._registeredTools;
 
-    expect(Object.keys(registeredTools)).toHaveLength(10);
+    expect(Object.keys(registeredTools)).toHaveLength(11);
     for (const tool of allTools) {
       expect(registeredTools[tool.name]).toBeDefined();
     }
@@ -1020,7 +1021,7 @@ describe("Tool Registry", () => {
     expect(
       registeredTools["openproject_synthetic_mutating_tool"]
     ).toBeUndefined();
-    expect(Object.keys(registeredTools)).toHaveLength(10);
+    expect(Object.keys(registeredTools)).toHaveLength(11);
     for (const tool of allTools) {
       expect(registeredTools[tool.name]).toBeDefined();
     }
