@@ -58,7 +58,7 @@
   export function clearOpenApiCache(): void;
   ```
 
-- [ ] **Step 1: Write failing service tests in `tests/openapi.test.ts`**
+- [x] **Step 1: Write failing service tests in `tests/openapi.test.ts`**
 
 ```typescript
 import { describe, expect, test, beforeEach } from "bun:test";
@@ -216,12 +216,12 @@ describe("OpenApi Service", () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `bun test tests/openapi.test.ts`
 Expected: FAIL (Cannot find module `../src/services/openapi`).
 
-- [ ] **Step 3: Implement `src/services/openapi.ts` and export from `src/services/index.ts`**
+- [x] **Step 3: Implement `src/services/openapi.ts` and export from `src/services/index.ts`**
 
 In `src/services/openapi.ts`:
 ```typescript
@@ -424,12 +424,12 @@ export async function getOpenApiSpec(
 In `src/services/index.ts`:
 Export `getOpenApiSpec`, `clearOpenApiCache`, `OpenApiQueryOptions`, `OpenApiSummary` from `./openapi`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `bun test tests/openapi.test.ts`
 Expected: PASS (9 pass).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/services/openapi.ts src/services/index.ts tests/openapi.test.ts
