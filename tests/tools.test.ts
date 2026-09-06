@@ -10,6 +10,7 @@ import {
   formatToolError,
   registerTool,
   type ToolDefinition,
+  type RegisterToolOptions,
 } from "../src/tools/common";
 import {
   listProjectsShape,
@@ -1025,6 +1026,132 @@ describe("Tool Registry", () => {
     }
   });
 });
+
+describe("Tool Execution Wrapper", () => {
+  test("registerTool passes execution through wrapExecute when provided", async () => {
+    const server = new McpServer({ name: "test", version: "1" });
+    let wrapperCalled = false;
+    const dummyTool: ToolDefinition = {
+      name: "wrapped_tool",
+      description: "A wrapped tool",
+      readOnly: true,
+      execute: async () => ({ content: [{ type: "text", text: "success" }] }),
+    };
+
+    registerTool(server, dummyTool, {
+      wrapExecute: async (fn) => {
+        wrapperCalled = true;
+        return fn();
+      },
+    });
+
+    const registered = (
+      server as unknown as {
+        _registeredTools: Record<
+          string,
+          {
+            handler: (args: Record<string, unknown>) => Promise<{
+              content: Array<{ type: string; text: string }>;
+              isError?: boolean;
+            }>;
+          }
+        >;
+      }
+    )._registeredTools["wrapped_tool"];
+    const result = await registered.handler({});
+    expect(wrapperCalled).toBe(true);
+    expect(result.content[0]?.text).toBe("success");
+  });
+
+  test("registerTool passes tool definition and arguments to wrapExecute", async () => {
+    const server = new McpServer({ name: "test", version: "1" });
+    let capturedToolName = "";
+    let capturedArgs: Record<string, unknown> = {};
+
+    const dummyToolWithParams: ToolDefinition<{ id: z.ZodNumber }, { id: number }> = {
+      name: "param_wrapped_tool",
+      description: "Param wrapped tool",
+      parameters: { id: z.number() },
+      readOnly: true,
+      execute: async (args: { id: number }) => ({
+        content: [{ type: "text", text: `id: ${args.id}` }],
+      }),
+    };
+
+    registerTool(server, dummyToolWithParams, {
+      wrapExecute: async (fn, tool, args) => {
+        capturedToolName = tool.name;
+        capturedArgs = args as Record<string, unknown>;
+        return fn();
+      },
+    });
+
+    const registered = (
+      server as unknown as {
+        _registeredTools: Record<
+          string,
+          {
+            handler: (args: Record<string, unknown>) => Promise<{
+              content: Array<{ type: string; text: string }>;
+              isError?: boolean;
+            }>;
+          }
+        >;
+      }
+    )._registeredTools["param_wrapped_tool"];
+
+    const result = await registered.handler({ id: 123 });
+    expect(capturedToolName).toBe("param_wrapped_tool");
+    expect(capturedArgs).toEqual({ id: 123 });
+    expect(result.content[0]?.text).toBe("id: 123");
+  });
+
+  test("registerAllTools forwards wrapExecute to registered tools", async () => {
+    const server = new McpServer({ name: "test", version: "1" });
+    const interceptedTools: string[] = [];
+
+    registerAllTools(server, {
+      wrapExecute: async (fn, tool) => {
+        interceptedTools.push(tool.name);
+        return fn();
+      },
+    });
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<
+          string,
+          {
+            handler: (args: Record<string, unknown>) => Promise<{
+              content: Array<{ type: string; text: string }>;
+              isError?: boolean;
+            }>;
+          }
+        >;
+      }
+    )._registeredTools;
+
+    const listProjects = registeredTools["openproject_list_projects"];
+    expect(listProjects).toBeDefined();
+
+    const dummyClient = {
+      get: async () => ({
+        _embedded: { elements: [] },
+        total: 0,
+        count: 0,
+        pageSize: 20,
+        offset: 1,
+      }),
+    } as unknown as OpenProjectClient;
+
+    await runWithContext({ client: dummyClient, isReadOnly: false }, () =>
+      listProjects.handler({})
+    );
+
+    expect(interceptedTools).toContain("openproject_list_projects");
+  });
+});
+
 
 describe("Live Container Integration (All 10 MCP Tools)", () => {
   const baseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";

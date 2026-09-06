@@ -66,19 +66,53 @@ export interface ToolDefinition<
 }
 
 /**
+ * Options for registering an individual tool on an McpServer instance.
+ */
+export interface RegisterToolOptions<
+  TShape extends ZodRawShape = ZodRawShape,
+  TArgs = Record<string, unknown>,
+> {
+  /**
+   * Optional wrapper function to intercept tool execution, enabling
+   * context injection (runWithContext) or execution guards (e.g. read-only checks).
+   */
+  wrapExecute?: (
+    fn: () => Promise<McpToolResponse>,
+    tool: ToolDefinition<TShape, TArgs>,
+    args: TArgs
+  ) => Promise<McpToolResponse>;
+}
+
+/**
  * Registers a ToolDefinition instance on an McpServer instance.
+ *
+ * @param server The McpServer instance to register the tool on.
+ * @param tool The ToolDefinition describing the tool metadata, parameters, and handler.
+ * @param options Optional registration options, such as an execution wrapper.
  */
 export function registerTool<
   TShape extends ZodRawShape = ZodRawShape,
   TArgs = Record<string, unknown>,
->(server: McpServer, tool: ToolDefinition<TShape, TArgs>): void {
+>(
+  server: McpServer,
+  tool: ToolDefinition<TShape, TArgs>,
+  options?: RegisterToolOptions<TShape, TArgs>
+): void {
+  const executeFn = (args: TArgs) => {
+    if (options?.wrapExecute) {
+      return options.wrapExecute(() => tool.execute(args), tool, args);
+    }
+    return tool.execute(args);
+  };
+
   if (tool.parameters) {
     server.tool(tool.name, tool.description, tool.parameters, async (args) => {
-      return tool.execute(args as unknown as TArgs);
+      return executeFn(args as unknown as TArgs);
     });
   } else {
     server.tool(tool.name, tool.description, async () => {
-      return tool.execute({} as unknown as TArgs);
+      return executeFn({} as unknown as TArgs);
     });
   }
 }
+

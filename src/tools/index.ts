@@ -3,7 +3,12 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerTool, type ToolDefinition } from "./common";
+import {
+  registerTool,
+  type ToolDefinition,
+  type RegisterToolOptions,
+  type McpToolResponse,
+} from "./common";
 import { projectTools } from "./projects";
 import { workPackageTools } from "./work-packages";
 import { queryTools } from "./queries";
@@ -31,11 +36,17 @@ export const allTools: AnyToolDefinition[] = [
 export interface RegisterToolsOptions {
   readOnly?: boolean;
   tools?: AnyToolDefinition[];
+  wrapExecute?: (
+    fn: () => Promise<McpToolResponse>,
+    tool: AnyToolDefinition,
+    args: Record<string, unknown>
+  ) => Promise<McpToolResponse>;
 }
 
 /**
  * Registers all OpenProject tools with the given McpServer instance.
  * If options.readOnly is true, tools not marked as readOnly are skipped.
+ * If options.wrapExecute is provided, tool execution is intercepted through the wrapper.
  */
 export function registerAllTools(
   server: McpServer,
@@ -49,6 +60,19 @@ export function registerAllTools(
     if (isReadOnly && !tool.readOnly) {
       continue;
     }
-    registerTool(server, tool as unknown as ToolDefinition);
+
+    const toolOptions: RegisterToolOptions | undefined = options?.wrapExecute
+      ? {
+          wrapExecute: (fn, t, args) =>
+            options.wrapExecute!(
+              fn,
+              t as unknown as AnyToolDefinition,
+              args as Record<string, unknown>
+            ),
+        }
+      : undefined;
+
+    registerTool(server, tool as unknown as ToolDefinition, toolOptions);
   }
 }
+
