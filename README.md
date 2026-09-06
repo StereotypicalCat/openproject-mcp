@@ -9,11 +9,13 @@ It allows agents to browse, query, and reason about OpenProject workspaces using
 ## Features
 
 - **Project Discovery**: List accessible projects, inspect hierarchies, and retrieve project details.
-- **Work Package Browsing**: Query work packages with status, type, and custom filters; inspect work package details and relationships.
+- **Work Package Browsing**: Query work packages with status, type, assignee, priority, and custom filters; inspect work package details and parent/child relationships.
 - **Saved Queries (Views)**: Discover and execute saved project and global queries.
 - **Taxonomies & Metadata**: Query work package types (Tasks, Bugs, Features), statuses, priorities, and users to enable structured agent reasoning.
+- **OpenAPI Schema Introspection**: Query dynamic endpoint specifications, parameter schemas, and data models directly from the connected OpenProject instance with in-memory caching.
 - **HAL+JSON Normalization**: Converts OpenProject's verbose HAL+JSON representations into concise, token-efficient structures.
 - **Secure Authentication**: Uses OpenProject Personal API tokens via HTTP Basic Auth (`apikey:<token>`) with zero credential storage inside the codebase.
+- **Multi-Platform Docker Images**: Official multi-architecture images (`linux/amd64` and `linux/arm64`) published to GitHub Container Registry (`ghcr.io`).
 
 ---
 
@@ -26,14 +28,28 @@ It allows agents to browse, query, and reason about OpenProject workspaces using
 
 ---
 
-## Running via Docker
+## Obtaining an OpenProject API Token
 
-You can run `openproject-mcp` without installing Bun or cloning this repository by using the container image published to GitHub Container Registry (`ghcr.io`).
+To connect `openproject-mcp` to your OpenProject instance, generate a personal API token:
 
-### Docker Quickstart
+1. Log in to your OpenProject web interface.
+2. In the top-right corner, click on your **user avatar** and select **My account**.
+3. In the left navigation menu, click on **Access tokens**.
+4. In the **API** row, click **Generate** (or **Reset** if an existing token was lost).
+5. Copy the generated API token (it starts with `opapi_` or similar hex/alphanumeric string).
+6. Keep this token safe; you will pass it via `OPENPROJECT_API_KEY`.
 
-Run interactively with standard I/O streaming:
+---
 
+## Running openproject-mcp
+
+You can run `openproject-mcp` using either **Docker** (no local dependencies required) or **Bun** (local development).
+
+### Method 1: Docker (Recommended)
+
+Official multi-architecture container images are published to GitHub Container Registry (`ghcr.io`).
+
+#### Interactive Execution
 ```bash
 docker run -i --rm \
   -e OPENPROJECT_BASE_URL="https://openproject.example.com" \
@@ -41,28 +57,60 @@ docker run -i --rm \
   ghcr.io/stereotypicalcat/openproject-mcp:latest
 ```
 
-### Read-Only Mode
-
-To ensure the server strictly restricts capabilities to read-only queries and inspection:
-
+#### Read-Only Mode
+To strictly restrict capabilities to read-only browsing:
 ```bash
 docker run -i --rm \
   -e OPENPROJECT_BASE_URL="https://openproject.example.com" \
   -e OPENPROJECT_API_KEY="your-api-key" \
   ghcr.io/stereotypicalcat/openproject-mcp:latest --read-only
 ```
-
 *(Alternatively, pass `-e OPENPROJECT_READ_ONLY=true`.)*
 
-### MCP Client Configuration
+---
 
-#### Claude Desktop
+### Method 2: Local Execution with Bun
 
-Add the following to your `claude_desktop_config.json`:
+If you prefer to run from source:
+
+1. Install [Bun](https://bun.sh) (>= 1.2 / 1.3):
+   ```bash
+   curl -fsSL https://bun.sh/install | bash
+   ```
+
+2. Clone and install dependencies:
+   ```bash
+   git clone https://github.com/StereotypicalCat/openproject-mcp.git
+   cd openproject-mcp
+   bun install
+   ```
+
+3. Run the server:
+   ```bash
+   OPENPROJECT_BASE_URL="https://openproject.example.com" \
+   OPENPROJECT_API_KEY="your-api-key" \
+   bun run src/index.ts
+   ```
+
+   For read-only mode:
+   ```bash
+   OPENPROJECT_BASE_URL="https://openproject.example.com" \
+   OPENPROJECT_API_KEY="your-api-key" \
+   bun run src/index.ts --read-only
+   ```
+
+---
+
+## MCP Client Configuration
+
+### Claude Desktop
+
+Edit your `claude_desktop_config.json`:
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
+#### Option A: Docker (Zero Installation)
 ```json
 {
   "mcpServers": {
@@ -72,10 +120,8 @@ Add the following to your `claude_desktop_config.json`:
         "run",
         "-i",
         "--rm",
-        "-e",
-        "OPENPROJECT_BASE_URL=https://openproject.example.com",
-        "-e",
-        "OPENPROJECT_API_KEY=your-api-key",
+        "-e", "OPENPROJECT_BASE_URL=https://openproject.example.com",
+        "-e", "OPENPROJECT_API_KEY=your-api-key",
         "ghcr.io/stereotypicalcat/openproject-mcp:latest",
         "--read-only"
       ]
@@ -84,10 +130,33 @@ Add the following to your `claude_desktop_config.json`:
 }
 ```
 
-#### Cursor
+#### Option B: Bun (From Source)
+```json
+{
+  "mcpServers": {
+    "openproject": {
+      "command": "bun",
+      "args": [
+        "run",
+        "/path/to/openproject-mcp/src/index.ts",
+        "--read-only"
+      ],
+      "env": {
+        "OPENPROJECT_BASE_URL": "https://openproject.example.com",
+        "OPENPROJECT_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
 
-Add the following to `.cursor/mcp.json` (or Cursor Settings > Features > MCP):
+---
 
+### Cursor
+
+Add the configuration in `.cursor/mcp.json` (or under **Cursor Settings > Features > MCP**):
+
+#### Docker Configuration
 ```json
 {
   "mcpServers": {
@@ -97,10 +166,8 @@ Add the following to `.cursor/mcp.json` (or Cursor Settings > Features > MCP):
         "run",
         "-i",
         "--rm",
-        "-e",
-        "OPENPROJECT_BASE_URL=https://openproject.example.com",
-        "-e",
-        "OPENPROJECT_API_KEY=your-api-key",
+        "-e", "OPENPROJECT_BASE_URL=https://openproject.example.com",
+        "-e", "OPENPROJECT_API_KEY=your-api-key",
         "ghcr.io/stereotypicalcat/openproject-mcp:latest",
         "--read-only"
       ]
@@ -108,6 +175,94 @@ Add the following to `.cursor/mcp.json` (or Cursor Settings > Features > MCP):
   }
 }
 ```
+
+#### Bun Configuration
+```json
+{
+  "mcpServers": {
+    "openproject": {
+      "command": "bun",
+      "args": [
+        "run",
+        "/absolute/path/to/openproject-mcp/src/index.ts",
+        "--read-only"
+      ],
+      "env": {
+        "OPENPROJECT_BASE_URL": "https://openproject.example.com",
+        "OPENPROJECT_API_KEY": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Interactive Testing with MCP Inspector
+
+You can visually test and debug tool calls, explore parameter schemas, and inspect raw JSON payloads using the official MCP Inspector:
+
+```bash
+# Using Bun directly
+OPENPROJECT_BASE_URL="http://localhost:8080" \
+OPENPROJECT_API_KEY="your-api-key" \
+bunx @modelcontextprotocol/inspector bun run src/index.ts
+```
+
+Or test the published Docker image:
+```bash
+bunx @modelcontextprotocol/inspector docker run -i --rm \
+  -e OPENPROJECT_BASE_URL="http://localhost:8080" \
+  -e OPENPROJECT_API_KEY="your-api-key" \
+  ghcr.io/stereotypicalcat/openproject-mcp:latest
+```
+
+This launches a local web UI (typically at `http://localhost:5173`) where you can trigger tools and review formatted outputs.
+
+---
+
+## Available MCP Tools
+
+`openproject-mcp` currently exposes 11 tools:
+
+### Projects
+- `openproject_list_projects`: List projects with pagination (`offset`, `pageSize`), sorting (`sortBy`), and filtering.
+- `openproject_get_project`: Retrieve project details and metadata by ID or identifier (e.g. `projectId: "mcp-test-project"` or `projectId: 4`).
+
+### Work Packages
+- `openproject_list_work_packages`: Query work packages with high-level filters (`projectId`, `status`, `typeId`, `assigneeId`, `priorityId`, `subject`, `pageSize`, `offset`) or custom JSON filter expressions.
+- `openproject_get_work_package`: Retrieve detailed information for a specific work package by ID (`workPackageId: 38`), including description, type, status, priority, author, dates, parent, and children.
+
+### Saved Queries & Views
+- `openproject_list_queries`: List saved queries/views accessible to the authenticated user, optionally scoped to a project.
+- `openproject_get_query`: Retrieve saved query configuration and the work packages returned by that query (`queryId: 30`).
+
+### Taxonomies & Metadata
+- `openproject_list_types`: List all work package types (e.g., Task, Bug, Feature, Milestone), optionally scoped to a project.
+- `openproject_list_statuses`: List all configured work package statuses (e.g., New, In progress, Closed) and their closed flags.
+- `openproject_list_priorities`: List all configured priority levels (e.g., Low, Normal, High, Immediate).
+- `openproject_list_users`: List users in the OpenProject instance with pagination and status filtering.
+
+### OpenAPI Introspection
+- `openproject_get_openapi_spec`: Inspect OpenProject REST API v3 documentation dynamically with in-memory caching.
+  - Default / `summary: true`: Returns compact summary of available tags, paths, and usage instructions.
+  - `path: "/api/v3/work_packages"`: Returns parameter and operation schemas for a specific endpoint.
+  - `tag: "Work Packages"`: Returns all endpoints grouped under a tag.
+  - `schema: "WorkPackageModel"`: Returns the JSON Schema definition for a component model.
+
+---
+
+## Example Prompts for AI Assistants
+
+Once connected in Claude Desktop, Cursor, or your agent of choice, you can ask queries such as:
+
+- *"List all projects in OpenProject and tell me which ones are active."*
+- *"Show me all open bugs in the 'mcp-test-project' project."*
+- *"What work packages are assigned to me, and what are their priorities?"*
+- *"Get details for work package #38 including its child tasks."*
+- *"Show the saved queries available for project 4 and run 'MCP Active Tasks'."*
+- *"What work package types and statuses are available in our OpenProject instance?"*
+- *"Inspect the OpenAPI schema for creating work packages using openproject_get_openapi_spec."*
 
 ---
 
@@ -152,7 +307,7 @@ Once seeded, OpenProject is accessible at [http://localhost:8080](http://localho
 - **Username**: `admin`
 - **Password**: `admin12345678`
 
-You can verify the API v3 connection directly using `curl`:
+Verify the API v3 connection directly using `curl`:
 
 ```bash
 curl -u "apikey:$(grep OPENPROJECT_API_KEY .env.test | cut -d= -f2)" \
@@ -175,37 +330,9 @@ docker compose down -v
 
 ---
 
-## MCP Server Development (Bun)
+## Configuration Reference
 
-Install project dependencies:
-
-```bash
-bun install
-```
-
-Start the MCP server over stdio:
-
-```bash
-bun run src/index.ts
-```
-
-Run test suite:
-
-```bash
-bun test
-```
-
-Type-check:
-
-```bash
-bun run typecheck
-```
-
----
-
-## Configuration
-
-The MCP server accepts configuration through environment variables or a `.env` file:
+The MCP server accepts configuration through environment variables, CLI arguments, or a `.env` file:
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
@@ -216,24 +343,30 @@ The MCP server accepts configuration through environment variables or a `.env` f
 | `TAG` | OpenProject container image tag | `17-slim` |
 | `POSTGRES_VERSION` | PostgreSQL container image tag | `17` |
 
-### Read-Only Mode
+---
 
-To ensure AI assistants cannot make any modifications to your OpenProject instance, enable read-only mode:
+## Development
 
 ```bash
-OPENPROJECT_READ_ONLY=true bun run src/index.ts
-# or
-bun run src/index.ts --read-only
-```
+# Install dependencies
+bun install
 
-When active, write tools are omitted from the tool manifest and blocked by execution guards.
+# Run type checker
+bun run typecheck
+
+# Run test suite
+bun test
+
+# Run MCP server locally over stdio
+bun run src/index.ts
+```
 
 ---
 
 ## Development Roadmap
 
-- **Phase 1 (Current)**: Read-only browsing tools for projects, work packages, queries, and taxonomies.
-- **Phase 2**: Mutating operations (create/update work packages, add comments, log time).
+- **Phase 1 (Completed)**: Read-only browsing tools for projects, work packages, queries, taxonomies, and OpenAPI introspection.
+- **Phase 2 (Upcoming)**: Mutating operations (create/update work packages, add comments, log time).
 - **Phase 3**: Attachment reading and document resources.
 - **Phase 4**: SSE / Stream transport for remote server deployments.
 
