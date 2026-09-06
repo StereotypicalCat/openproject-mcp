@@ -93,11 +93,13 @@ export async function handleGetQuery(
   args: GetQueryArgs
 ): Promise<McpToolResponse> {
   try {
-    const query = await getQuery(args.queryId);
-    const results = await getQueryResults(args.queryId, {
-      pageSize: args.pageSize,
-      offset: args.offset,
-    });
+    const [query, results] = await Promise.all([
+      getQuery(args.queryId),
+      getQueryResults(args.queryId, {
+        pageSize: args.pageSize,
+        offset: args.offset,
+      }),
+    ]);
 
     return formatToolSuccess({
       query,

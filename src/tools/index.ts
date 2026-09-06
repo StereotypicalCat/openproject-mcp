@@ -30,6 +30,7 @@ export const allTools: AnyToolDefinition[] = [
 
 export interface RegisterToolsOptions {
   readOnly?: boolean;
+  tools?: AnyToolDefinition[];
 }
 
 /**
@@ -41,12 +42,13 @@ export function registerAllTools(
   options?: RegisterToolsOptions
 ): void {
   const isReadOnly = options?.readOnly ?? false;
+  const toolsToRegister = options?.tools ?? allTools;
 
-  for (const tool of allTools) {
+  for (const tool of toolsToRegister) {
     // If server is in read-only mode, skip any non-read-only tools
     if (isReadOnly && !tool.readOnly) {
       continue;
     }
-    registerTool(server, tool);
+    registerTool(server, tool as unknown as ToolDefinition);
   }
 }

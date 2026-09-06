@@ -47,7 +47,13 @@ export async function handleListProjects(
   try {
     let filters: FilterElement[] | undefined;
     if (args.filters) {
-      filters = JSON.parse(args.filters) as FilterElement[];
+      const parsed = JSON.parse(args.filters);
+      if (!Array.isArray(parsed)) {
+        return formatToolError(
+          new Error("filters parameter must be a JSON array string")
+        );
+      }
+      filters = parsed as FilterElement[];
     }
 
     const result = await listProjects({
@@ -71,7 +77,7 @@ export async function handleListProjects(
 
 export const getProjectShape = {
   projectId: z
-    .union([z.number().int().positive(), z.string()])
+    .union([z.number().int().positive(), z.string().min(1)])
     .describe("Numeric project ID or string identifier/slug"),
 };
 

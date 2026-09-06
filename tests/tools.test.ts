@@ -252,6 +252,17 @@ describe("Project Tools", () => {
     expect(response.content[0]?.text).toContain("Error");
   });
 
+  test("handleListProjects catches non-array JSON filters and returns error response", async () => {
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListProjects({ filters: '{"not":"an array"}' })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain(
+      "filters parameter must be a JSON array string"
+    );
+  });
+
   test("getProject validates schema and retrieves single project", async () => {
     const schema = z.object(getProjectShape);
     const parsed = schema.parse({ projectId: 4 });
@@ -264,6 +275,13 @@ describe("Project Tools", () => {
     const result = JSON.parse(response.content[0]?.text ?? "{}");
     expect(result.id).toBe(4);
     expect(result.identifier).toBe("mcp-test-project");
+  });
+
+  test("getProject rejects empty string projectId", () => {
+    const schema = z.object(getProjectShape);
+    expect(() => schema.parse({ projectId: "" })).toThrow();
+    expect(() => schema.parse({ projectId: 0 })).toThrow();
+    expect(() => schema.parse({ projectId: -1 })).toThrow();
   });
 
   test("getProject catches errors and formats error response", async () => {
@@ -977,7 +995,20 @@ describe("Tool Registry", () => {
 
   test("registerAllTools filters out non-readOnly tools when readOnly is true", () => {
     const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
-    registerAllTools(server, { readOnly: true });
+    const syntheticMutatingTool: ToolDefinition = {
+      name: "openproject_synthetic_mutating_tool",
+      description: "A synthetic mutating tool for testing readOnly filtering",
+      readOnly: false,
+      execute: async () => formatToolSuccess({ mutated: true }),
+    };
+
+    registerAllTools(server, {
+      readOnly: true,
+      tools: [
+        ...allTools,
+        syntheticMutatingTool as unknown as AnyToolDefinition,
+      ],
+    });
 
     const registeredTools = (
       server as unknown as {
@@ -985,7 +1016,13 @@ describe("Tool Registry", () => {
       }
     )._registeredTools;
 
+    expect(
+      registeredTools["openproject_synthetic_mutating_tool"]
+    ).toBeUndefined();
     expect(Object.keys(registeredTools)).toHaveLength(10);
+    for (const tool of allTools) {
+      expect(registeredTools[tool.name]).toBeDefined();
+    }
   });
 });
 
