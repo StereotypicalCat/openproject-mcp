@@ -32,7 +32,7 @@ export function createServer(config: AppConfig): OpenProjectMcpServer {
 
   const client = new OpenProjectClient({
     baseUrl: config.baseUrl,
-    apiKey: config.apiKey,
+    apiKey: config.apiKey ?? "",
   });
 
   // Register all tools with ambient context execution and read-only guards
