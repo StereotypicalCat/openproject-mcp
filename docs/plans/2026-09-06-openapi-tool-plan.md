@@ -616,7 +616,7 @@ git commit -m "feat(tools): add openproject_get_openapi_spec tool definition and
 - Consumes: Live OpenProject 17 container on `http://localhost:8080`, `src/server.ts`, `allTools`
 - Produces: Updated test suites expecting 11 tools, end-to-end verified live OpenAPI querying, and updated project tracking.
 
-- [ ] **Step 1: Add live container integration test to `tests/openapi.test.ts`**
+- [x] **Step 1: Add live container integration test to `tests/openapi.test.ts`**
 
 ```typescript
 describe("Live Container OpenAPI Integration", () => {
@@ -649,7 +649,7 @@ describe("Live Container OpenAPI Integration", () => {
 });
 ```
 
-- [ ] **Step 2: Update tool count expectations in existing tests**
+- [x] **Step 2: Update tool count expectations in existing tests**
 
 - In `tests/tools.test.ts`:
   - `allTools contains exactly 10 Phase 1 tools` -> update to `allTools contains exactly 11 tools including OpenAPI spec` and `expect(allTools).toHaveLength(11)`.
@@ -661,16 +661,16 @@ describe("Live Container OpenAPI Integration", () => {
 - In `tests/mcp-server.test.ts`:
   - `read-only mode filters tools and maintains read-only status in context` -> update length expectation from 10 to 11.
 
-- [ ] **Step 3: Run full test suite**
+- [x] **Step 3: Run full test suite**
 
 Run: `bun test`
 Expected: All tests pass cleanly across all test files (`smoke`, `client`, `services`, `tools`, `mcp-server`, `read-only`, `openapi`).
 
-- [ ] **Step 4: Update `docs/TODO.md`**
+- [x] **Step 4: Update `docs/TODO.md`**
 
 Add `openproject_get_openapi_spec` tool under completed roadmap and record OpenAPI tool implementation.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/openapi.test.ts tests/tools.test.ts tests/read-only.test.ts tests/mcp-server.test.ts docs/TODO.md
