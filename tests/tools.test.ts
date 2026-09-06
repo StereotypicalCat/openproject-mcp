@@ -51,7 +51,7 @@ import { OpenProjectNotFoundError } from "../src/client/errors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runWithContext } from "../src/context";
-import type { OpenProjectClient } from "../src/client/api-client";
+import { OpenProjectClient } from "../src/client/api-client";
 
 
 describe("Tool Utilities", () => {
@@ -988,6 +988,87 @@ describe("Tool Registry", () => {
     expect(Object.keys(registeredTools)).toHaveLength(10);
   });
 });
+
+describe("Live Container Integration (All 10 MCP Tools)", () => {
+  const baseUrl = process.env.OPENPROJECT_BASE_URL || "http://localhost:8080";
+  const apiKey = process.env.OPENPROJECT_API_KEY || "";
+  const liveClient = new OpenProjectClient({ baseUrl, apiKey });
+
+  test("live: list projects and get project tool execution", async () => {
+    await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
+      const listRes = await handleListProjects({ pageSize: 5 });
+      expect(listRes.isError).toBeUndefined();
+      const listData = JSON.parse(listRes.content[0].text);
+      expect(listData.projects.length).toBeGreaterThan(0);
+
+      const targetProject =
+        listData.projects.find(
+          (p: { identifier?: string; id: number }) => p.identifier === "mcp-test-project"
+        ) || listData.projects[0];
+      const getRes = await handleGetProject({ projectId: targetProject.id });
+      expect(getRes.isError).toBeUndefined();
+      const getData = JSON.parse(getRes.content[0].text);
+      expect(getData.id).toBe(targetProject.id);
+    });
+  });
+
+  test("live: list work packages and get work package tool execution", async () => {
+    await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
+      const listRes = await handleListWorkPackages({ pageSize: 5 });
+      expect(listRes.isError).toBeUndefined();
+      const listData = JSON.parse(listRes.content[0].text);
+      expect(listData.workPackages.length).toBeGreaterThan(0);
+
+      const wpId = listData.workPackages[0].id;
+      const getRes = await handleGetWorkPackage({ workPackageId: wpId });
+      expect(getRes.isError).toBeUndefined();
+      const getData = JSON.parse(getRes.content[0].text);
+      expect(getData.id).toBe(wpId);
+      expect(getData.subject).toBeDefined();
+    });
+  });
+
+  test("live: list queries and get query tool execution", async () => {
+    await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
+      const listRes = await handleListQueries({});
+      expect(listRes.isError).toBeUndefined();
+      const listData = JSON.parse(listRes.content[0].text);
+      expect(listData.queries.length).toBeGreaterThan(0);
+
+      const queryId = listData.queries[0].id;
+      const getRes = await handleGetQuery({ queryId });
+      expect(getRes.isError).toBeUndefined();
+      const getData = JSON.parse(getRes.content[0].text);
+      expect(getData.query.id).toBe(queryId);
+      expect(getData.results).toBeDefined();
+    });
+  });
+
+  test("live: metadata tools execution (types, statuses, priorities, users)", async () => {
+    await runWithContext({ client: liveClient, isReadOnly: false }, async () => {
+      const typesRes = await handleListTypes({});
+      expect(typesRes.isError).toBeUndefined();
+      const typesData = JSON.parse(typesRes.content[0].text);
+      expect(typesData.types.length).toBeGreaterThan(0);
+
+      const statusesRes = await handleListStatuses({});
+      expect(statusesRes.isError).toBeUndefined();
+      const statusesData = JSON.parse(statusesRes.content[0].text);
+      expect(statusesData.statuses.length).toBeGreaterThan(0);
+
+      const prioritiesRes = await handleListPriorities({});
+      expect(prioritiesRes.isError).toBeUndefined();
+      const prioritiesData = JSON.parse(prioritiesRes.content[0].text);
+      expect(prioritiesData.priorities.length).toBeGreaterThan(0);
+
+      const usersRes = await handleListUsers({ pageSize: 5 });
+      expect(usersRes.isError).toBeUndefined();
+      const usersData = JSON.parse(usersRes.content[0].text);
+      expect(usersData.users.length).toBeGreaterThan(0);
+    });
+  });
+});
+
 
 
 

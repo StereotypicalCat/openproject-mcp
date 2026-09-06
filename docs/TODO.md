@@ -60,18 +60,18 @@
   - [x] Implement `src/services/metadata.ts` (`listStatuses`, `listTypes`, `listPriorities`, `listUsers`).
   - [x] Add service tests in `tests/services.test.ts` (unit tests and live container integration suite passing).
 
-- [ ] **Task 3: MCP Tool Definitions & Schema Registration** *(In Progress: Tasks 1-3 of plan completed)*
-  - [ ] Define Zod schemas and register tools in `src/tools/`:
+- [x] **Task 3: MCP Tool Definitions & Schema Registration**
+  - [x] Define Zod schemas and register tools in `src/tools/`:
     - [x] `openproject_list_projects`
     - [x] `openproject_get_project`
     - [x] `openproject_list_work_packages`
     - [x] `openproject_get_work_package`
-    - [ ] `openproject_list_queries`
-    - [ ] `openproject_get_query`
-    - [ ] `openproject_list_types`
-    - [ ] `openproject_list_statuses`
-    - [ ] `openproject_list_priorities`
-    - [ ] `openproject_list_users`
+    - [x] `openproject_list_queries`
+    - [x] `openproject_get_query`
+    - [x] `openproject_list_types`
+    - [x] `openproject_list_statuses`
+    - [x] `openproject_list_priorities`
+    - [x] `openproject_list_users`
 
 - [ ] **Task 4: MCP Stdio Server Assembly & Integration**
   - [ ] Wire domain tools into `@modelcontextprotocol/sdk` Server using `StdioServerTransport` in `src/server.ts` and `src/index.ts`.
