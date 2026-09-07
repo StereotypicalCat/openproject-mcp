@@ -252,6 +252,71 @@ describe("Meetings Service", () => {
     expect(res.elements[0]!.meeting.id).toBe(2);
   });
 
+  test("searchMeetings iterates candidate pages when total meetings exceed single page size", async () => {
+    const requestedOffsets: number[] = [];
+    const mockClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/meetings?")) {
+          const url = new URL(`http://dummy${path}`);
+          const offset = Number(url.searchParams.get("offset") ?? "1");
+          requestedOffsets.push(offset);
+
+          if (offset === 1) {
+            // Page 1: 50 meetings, none matching query
+            const page1Elements = Array.from({ length: 50 }, (_, i) => ({
+              _type: "Meeting",
+              id: i + 1,
+              title: `Daily Routine ${i + 1}`,
+              state: "open",
+              startTime: "2026-09-01T10:00:00Z",
+              endTime: "2026-09-01T10:30:00Z",
+              _links: { project: { href: "/api/v3/projects/1", title: "Demo" } },
+            }));
+            return {
+              _type: "Collection",
+              total: 55,
+              count: 50,
+              pageSize: 50,
+              offset: 1,
+              _embedded: { elements: page1Elements },
+            };
+          }
+
+          if (offset === 2) {
+            // Page 2: 5 meetings, meeting #52 has matching title
+            const page2Elements = Array.from({ length: 5 }, (_, i) => ({
+              _type: "Meeting",
+              id: 51 + i,
+              title: i === 1 ? "Special Architecture Sync" : `Daily Routine ${51 + i}`,
+              state: "open",
+              startTime: "2026-09-02T10:00:00Z",
+              endTime: "2026-09-02T10:30:00Z",
+              _links: { project: { href: "/api/v3/projects/1", title: "Demo" } },
+            }));
+            return {
+              _type: "Collection",
+              total: 55,
+              count: 5,
+              pageSize: 50,
+              offset: 2,
+              _embedded: { elements: page2Elements },
+            };
+          }
+        }
+        if (path.includes("/agenda_items")) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        throw new Error(`Unexpected path: ${path}`);
+      },
+    } as unknown as OpenProjectClient;
+
+    const res = await searchMeetings({ query: "Architecture" }, mockClient);
+    expect(requestedOffsets).toEqual([1, 2]);
+    expect(res.total).toBe(1);
+    expect(res.elements[0]!.meeting.id).toBe(52);
+    expect(res.elements[0]!.meeting.title).toBe("Special Architecture Sync");
+  });
+
   test("listMeetings supports time filter (upcoming and past)", async () => {
     let capturedPath = "";
     const mockClient = {

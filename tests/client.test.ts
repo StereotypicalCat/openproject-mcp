@@ -442,6 +442,26 @@ describe("OpenProjectClient (Mocked Unit Tests)", () => {
     expect(capturedHeaders?.get("Accept")).toContain("application/hal+json");
   });
 
+  test("getCacheKey returns unique key scoped to both baseUrl and apiKey", () => {
+    const clientA = new OpenProjectClient({
+      baseUrl: "https://openproject.example.com",
+      apiKey: "user-key-a",
+    });
+    const clientB = new OpenProjectClient({
+      baseUrl: "https://openproject.example.com",
+      apiKey: "user-key-b",
+    });
+    const clientC = new OpenProjectClient({
+      baseUrl: "https://other.example.com",
+      apiKey: "user-key-a",
+    });
+
+    expect(clientA.getCacheKey()).toBe("https://openproject.example.com#user-key-a");
+    expect(clientB.getCacheKey()).toBe("https://openproject.example.com#user-key-b");
+    expect(clientC.getCacheKey()).toBe("https://other.example.com#user-key-a");
+    expect(clientA.getCacheKey()).not.toBe(clientB.getCacheKey());
+  });
+
   test("sanitizes API credentials from error messages", async () => {
     const secretKey = "super-secret-key-xyz-999";
     const mockFetch = async (): Promise<Response> => {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { OpenProjectClient } from "../src/client/api-client.ts";
+import { runWithContext, type RequestContext } from "../src/context.ts";
 import { listWorkPackageActivities } from "../src/services/work-packages.ts";
 
 describe("Work Package Activities Service", () => {
@@ -96,5 +97,44 @@ describe("Work Package Activities Service", () => {
 
     const res = await listWorkPackageActivities({ workPackageId: 10 }, mockClient);
     expect(res).toEqual([]);
+  });
+
+  test("resolves ambient RequestContext client when client parameter is omitted", async () => {
+    let calledPath = "";
+    const ambientClient = {
+      get: async (path: string) => {
+        calledPath = path;
+        return {
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          _embedded: {
+            elements: [
+              {
+                id: 101,
+                version: 1,
+                createdAt: "2026-09-07T00:00:00Z",
+                comment: { raw: "Ambient resolution test comment" },
+                details: [],
+              },
+            ],
+          },
+        };
+      },
+    } as unknown as OpenProjectClient;
+
+    const context: RequestContext = {
+      client: ambientClient,
+      isReadOnly: false,
+    };
+
+    await runWithContext(context, async () => {
+      const res = await listWorkPackageActivities({ workPackageId: 77 });
+      expect(calledPath).toBe("/api/v3/work_packages/77/activities");
+      expect(res).toHaveLength(1);
+      expect(res[0]!.id).toBe(101);
+      expect(res[0]!.comment).toBe("Ambient resolution test comment");
+      expect(res[0]!.isComment).toBe(true);
+    });
   });
 });

@@ -63,16 +63,16 @@ export interface SearchWikiPagesParams {
   refreshCache?: boolean;
 }
 
-// In-memory cache for discovered wiki pages keyed by client baseUrl
+// In-memory cache for discovered wiki pages keyed by client cache key
 const wikiPagesCache = new Map<string, Map<number, WikiPageDetail>>();
-const discoveredBaseUrls = new Set<string>();
+const discoveredCacheKeys = new Set<string>();
 
 /**
  * Clears the in-memory wiki discovery cache.
  */
 export function clearWikiCache(): void {
   wikiPagesCache.clear();
-  discoveredBaseUrls.clear();
+  discoveredCacheKeys.clear();
 }
 
 /**
@@ -209,8 +209,8 @@ export async function getWikiPage(
 
   const detail = normalizeWikiPageDetail(pageResource, attachments);
 
-  // Update in-memory cache for this client baseUrl if initialized
-  const cacheKey = opClient.baseUrl || "default";
+  // Update in-memory cache for this client cache key if initialized
+  const cacheKey = opClient.getCacheKey?.() ?? (opClient.baseUrl || "default");
   let cacheMap = wikiPagesCache.get(cacheKey);
   if (!cacheMap) {
     cacheMap = new Map<number, WikiPageDetail>();
@@ -259,10 +259,10 @@ export async function searchWikiPages(
   client?: OpenProjectClient
 ): Promise<WikiPageSummary[]> {
   const opClient = resolveClient(client);
-  const cacheKey = opClient.baseUrl || "default";
+  const cacheKey = opClient.getCacheKey?.() ?? (opClient.baseUrl || "default");
 
   let cacheMap = wikiPagesCache.get(cacheKey);
-  const needsDiscovery = !cacheMap || !discoveredBaseUrls.has(cacheKey) || params?.refreshCache;
+  const needsDiscovery = !cacheMap || !discoveredCacheKeys.has(cacheKey) || params?.refreshCache;
 
   if (params?.refreshCache && cacheMap) {
     cacheMap.clear();
@@ -355,7 +355,7 @@ export async function searchWikiPages(
       }
     }
 
-    discoveredBaseUrls.add(cacheKey);
+    discoveredCacheKeys.add(cacheKey);
   }
 
   // 3. Resolve target project ID if provided

@@ -378,21 +378,44 @@ export async function searchMeetings(
   const opClient = resolveClient(client);
   const needle = params.query.toLowerCase().trim();
 
-  // Fetch candidate meetings scoped to project if specified
-  const candidateBatchSize = Math.max(params.pageSize ?? 50, 50);
-  const meetingsResult = await listMeetings(
-    {
-      projectId: params.projectId,
-      offset: 1,
-      pageSize: candidateBatchSize,
-    },
-    opClient
-  );
+  // Fetch candidate meetings scoped to project if specified, across multiple pages up to cap
+  const maxCandidates = 250;
+  const candidateBatchSize = Math.min(maxCandidates, Math.max(params.pageSize ?? 50, 50));
+  const candidateMeetings: MeetingSummary[] = [];
+  let candidateOffset = 1;
 
-  const candidateMeetings = meetingsResult.elements;
+  while (candidateMeetings.length < maxCandidates) {
+    const meetingsResult = await listMeetings(
+      {
+        projectId: params.projectId,
+        offset: candidateOffset,
+        pageSize: candidateBatchSize,
+      },
+      opClient
+    );
+
+    const elements = meetingsResult.elements;
+    if (elements.length === 0) {
+      break;
+    }
+
+    candidateMeetings.push(...elements);
+
+    // Stop if all meetings fetched or fewer elements returned than requested page size
+    if (
+      candidateMeetings.length >= meetingsResult.total ||
+      elements.length < candidateBatchSize
+    ) {
+      break;
+    }
+
+    candidateOffset += 1;
+  }
+
+  const scopedCandidates = candidateMeetings.slice(0, maxCandidates);
 
   // Process candidate meetings concurrently
-  const matchPromises = candidateMeetings.map(async (meeting) => {
+  const matchPromises = scopedCandidates.map(async (meeting) => {
     const titleMatches = meeting.title.toLowerCase().includes(needle);
     const locationMatches = Boolean(
       meeting.location && meeting.location.toLowerCase().includes(needle)

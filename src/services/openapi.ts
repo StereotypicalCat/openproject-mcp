@@ -76,7 +76,7 @@ export async function getOpenApiSpec(
   client?: OpenProjectClient
 ): Promise<unknown> {
   const activeClient = resolveClient(client);
-  const cacheKey = activeClient.baseUrl;
+  const cacheKey = activeClient.getCacheKey?.() ?? activeClient.baseUrl;
 
   if (options?.refresh) {
     openApiCache.delete(cacheKey);

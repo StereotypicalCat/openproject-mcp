@@ -146,6 +146,13 @@ export class OpenProjectClient {
   }
 
   /**
+   * Returns a unique cache key scoped to both baseUrl and apiKey for multi-tenant cache isolation.
+   */
+  getCacheKey(): string {
+    return `${this.baseUrl}#${this.apiKey}`;
+  }
+
+  /**
    * Performs an HTTP GET request to OpenProject API v3.
    */
   async get<T>(

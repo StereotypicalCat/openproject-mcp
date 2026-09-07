@@ -478,4 +478,181 @@ describe("Wikis Service", () => {
     expect(refreshedResults).toHaveLength(1);
     expect(refreshedResults[0]!.id).toBe(1);
   });
+
+  test("maintains isolated wiki page cache across different clients with same baseUrl but different API keys", async () => {
+    let clientACalls = 0;
+    let clientBCalls = 0;
+
+    const mockFetchA = async (input: string | URL | Request) => {
+      clientACalls++;
+      const url = String(input);
+      if (url.includes("/api/v3/wiki_pages/1/attachments")) {
+        return new Response(
+          JSON.stringify({ _type: "Collection", total: 0, _embedded: { elements: [] } }),
+          { headers: { "Content-Type": "application/hal+json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          _type: "WikiPage",
+          id: 1,
+          title: "User A Confidential Wiki",
+          _links: { project: { href: "/api/v3/projects/1", title: "Project A" } },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const mockFetchB = async (input: string | URL | Request) => {
+      clientBCalls++;
+      const url = String(input);
+      if (url.includes("/api/v3/wiki_pages/1/attachments")) {
+        return new Response(
+          JSON.stringify({ _type: "Collection", total: 0, _embedded: { elements: [] } }),
+          { headers: { "Content-Type": "application/hal+json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          _type: "WikiPage",
+          id: 1,
+          title: "User B Confidential Wiki",
+          _links: { project: { href: "/api/v3/projects/2", title: "Project B" } },
+        }),
+        { headers: { "Content-Type": "application/hal+json" } }
+      );
+    };
+
+    const clientA = new OpenProjectClient({
+      baseUrl: "https://openproject.example.com",
+      apiKey: "api-key-tenant-a",
+      fetchFn: mockFetchA,
+    });
+
+    const clientB = new OpenProjectClient({
+      baseUrl: "https://openproject.example.com",
+      apiKey: "api-key-tenant-b",
+      fetchFn: mockFetchB,
+    });
+
+    // Client A fetches wiki page 1 -> cached in client A's bucket
+    const pageA = await getWikiPage(1, clientA);
+    expect(pageA.title).toBe("User A Confidential Wiki");
+    expect(clientACalls).toBe(2);
+
+    // Client B fetches wiki page 1 -> must NOT use client A's cache
+    const pageB = await getWikiPage(1, clientB);
+    expect(pageB.title).toBe("User B Confidential Wiki");
+    expect(clientBCalls).toBe(2);
+
+    // Repeat fetch with client A -> returns User A data without refetching from server
+    const pageA2 = await getWikiPage(1, clientA);
+    expect(pageA2.title).toBe("User A Confidential Wiki");
+  });
+
+  test("maintains isolated wiki search discovery cache across different API keys", async () => {
+    const mockFetchA = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/api/v3/wiki_page_links")) {
+        return new Response(
+          JSON.stringify({
+            _type: "Collection",
+            total: 1,
+            _embedded: {
+              elements: [
+                {
+                  id: 101,
+                  _links: { wikiPage: { href: "/api/v3/wiki_pages/10" } },
+                },
+              ],
+            },
+          }),
+          { headers: { "Content-Type": "application/hal+json" } }
+        );
+      }
+      if (url.includes("/api/v3/wiki_pages/10/attachments")) {
+        return new Response(
+          JSON.stringify({ _type: "Collection", total: 0, _embedded: { elements: [] } }),
+          { headers: { "Content-Type": "application/hal+json" } }
+        );
+      }
+      if (url.includes("/api/v3/wiki_pages/10")) {
+        return new Response(
+          JSON.stringify({
+            _type: "WikiPage",
+            id: 10,
+            title: "Tenant A Page",
+            _links: { project: { href: "/api/v3/projects/1", title: "Project A" } },
+          }),
+          { headers: { "Content-Type": "application/hal+json" } }
+        );
+      }
+      return new Response(JSON.stringify({ message: "Not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const mockFetchB = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/api/v3/wiki_page_links")) {
+        return new Response(
+          JSON.stringify({
+            _type: "Collection",
+            total: 1,
+            _embedded: {
+              elements: [
+                {
+                  id: 201,
+                  _links: { wikiPage: { href: "/api/v3/wiki_pages/20" } },
+                },
+              ],
+            },
+          }),
+          { headers: { "Content-Type": "application/hal+json" } }
+        );
+      }
+      if (url.includes("/api/v3/wiki_pages/20/attachments")) {
+        return new Response(
+          JSON.stringify({ _type: "Collection", total: 0, _embedded: { elements: [] } }),
+          { headers: { "Content-Type": "application/hal+json" } }
+        );
+      }
+      if (url.includes("/api/v3/wiki_pages/20")) {
+        return new Response(
+          JSON.stringify({
+            _type: "WikiPage",
+            id: 20,
+            title: "Tenant B Page",
+            _links: { project: { href: "/api/v3/projects/2", title: "Project B" } },
+          }),
+          { headers: { "Content-Type": "application/hal+json" } }
+        );
+      }
+      return new Response(JSON.stringify({ message: "Not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const clientA = new OpenProjectClient({
+      baseUrl: "https://openproject.example.com",
+      apiKey: "api-key-tenant-a",
+      fetchFn: mockFetchA,
+    });
+
+    const clientB = new OpenProjectClient({
+      baseUrl: "https://openproject.example.com",
+      apiKey: "api-key-tenant-b",
+      fetchFn: mockFetchB,
+    });
+
+    const searchResultsA = await searchWikiPages({}, clientA);
+    expect(searchResultsA).toHaveLength(1);
+    expect(searchResultsA[0]!.title).toBe("Tenant A Page");
+
+    const searchResultsB = await searchWikiPages({}, clientB);
+    expect(searchResultsB).toHaveLength(1);
+    expect(searchResultsB[0]!.title).toBe("Tenant B Page");
+  });
 });
