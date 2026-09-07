@@ -114,6 +114,17 @@
   - [x] Record [ADR-017](DECISIONS.md#adr-017-openapi-310-specification--rest-tool-execution-bridge-for-openapi-clients) in `docs/DECISIONS.md`.
   - [x] Document OpenAPI connection mode and server endpoints reference table in [README.md](../README.md).
 
+- [x] **Task 9: Meetings, Wikis, and Activities Extension (18 Tools Total)**
+  - [x] Implemented `listWorkPackageActivities` in `src/services/work-packages.ts` separating comments from field mutations with `onlyComments` filter.
+  - [x] Implemented `listMeetings`, `getMeeting` (with embedded agenda items/outcomes), and `searchMeetings` (deep search across titles, locations, and agenda item notes) in `src/services/meetings.ts`.
+  - [x] Implemented `getWikiPage` (with attachments), `listWikiPageLinks`, and `searchWikiPages` with smart discovery caching and consecutive 404 cutoff in `src/services/wikis.ts`.
+  - [x] Registered `openproject_list_work_package_activities` in `src/tools/work-packages.ts`.
+  - [x] Registered `openproject_list_meetings`, `openproject_get_meeting`, `openproject_search_meetings` in `src/tools/meetings.ts`.
+  - [x] Registered `openproject_get_wiki_page`, `openproject_search_wiki_pages`, `openproject_list_wiki_page_links` in `src/tools/wikis.ts`.
+  - [x] Wired all 18 tools into server registry (`src/tools/index.ts`, `src/services/index.ts`) and updated all test suite assertions to 18 tools.
+  - [x] Added live OpenProject 17 container integration tests in `tests/services.test.ts` and `tests/mcp-server.test.ts`.
+  - [x] Recorded [ADR-018](DECISIONS.md#adr-018-add-meetings-wikis-and-activities-tools-with-smart-wiki-discovery-and-deep-meeting-search) and updated [ARCHITECTURE.md](ARCHITECTURE.md), [TODO.md](TODO.md), and [README.md](../README.md).
+
 ---
 
 ## 3. Backlog & Future Phases
@@ -121,11 +132,14 @@
 - [x] **Phase 4: Remote Transport (Completed)**
   - [x] Add SSE (Server-Sent Events) transport option for remote deployments.
   - [x] Multi-tenant credential scoping with per-session isolation.
+- [x] **Phase 3 Extension: Meetings, Wikis, and Activities (Completed - 18 Tools Total)**
+  - [x] Meetings listing, detail inspection, and deep agenda search.
+  - [x] Wiki pages retrieval, smart cached discovery search, and work package links.
+  - [x] Work package activities and comments filtering.
 - [ ] **Phase 2: Mutating Operations**
   - [ ] Create work package tool (`openproject_create_work_package`).
   - [ ] Update work package tool (`openproject_update_work_package`).
   - [ ] Add comments / activities to work packages.
   - [ ] Time logging tool (`openproject_log_time`).
-- [ ] **Phase 3: Attachments & Documents**
-  - [ ] Inspect and download attachment resources.
-  - [ ] Wiki pages and project documents browsing.
+- [ ] **Phase 3 (Future): Binary Attachments & File Resources**
+  - [ ] Inspect and download binary attachment file contents via MCP resources.

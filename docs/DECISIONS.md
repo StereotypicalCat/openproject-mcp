@@ -430,4 +430,54 @@ While modern AI platforms (such as Open WebUI v0.6.31+) natively support MCP Str
 - **Negative**:
   - Introduces `src/openapi-spec.ts` dependency on `zod-to-json-schema`.
 
+---
+
+## ADR-018: Add Meetings, Wikis, and Activities Tools with Smart Wiki Discovery and Deep Meeting Search
+
+### Status
+Accepted
+
+### Context
+OpenProject provides critical team collaboration capabilities beyond core projects and work packages:
+1. **Meetings**: Structured agendas, participant lists, outcomes, and meeting minutes at `/api/v3/meetings`. LLMs frequently need to review sprint retrospectives, planning outcomes, and architectural decisions discussed in meetings.
+2. **Wikis**: Project documentation, architectural guides, and wiki pages stored at `/api/v3/wiki_pages`. However, OpenProject REST API v3 lacks a direct global `/api/v3/wiki_pages` collection endpoint. The API only exposes individual page retrieval (`/api/v3/wiki_pages/{id}`) and associations from work packages (`/api/v3/wiki_page_links` and `/api/v3/work_packages/{id}/wiki_page_links`).
+3. **Work Package Activities & Comments**: Full audit history and discussions attached to work packages at `/api/v3/work_packages/{id}/activities`. LLMs summarizing work package state need to isolate user comments from field mutation logs (e.g. status changes).
+
+Furthermore, all new capabilities must strictly adhere to the project's read-only execution guarantees (ADR-011), request-scoped concurrency model (ADR-012), token efficiency requirements (ADR-007), and OpenAPI specification generation (ADR-017).
+
+### Decision
+1. **Tool Scope and Read-Only Compliance**:
+   - Introduce 7 new read-only MCP tools:
+     - Meetings: `openproject_list_meetings`, `openproject_get_meeting`, `openproject_search_meetings`
+     - Wikis: `openproject_get_wiki_page`, `openproject_search_wiki_pages`, `openproject_list_wiki_page_links`
+     - Activities: `openproject_list_work_package_activities`
+   - Mark each tool `readOnly: true`, allowing them to be registered and executable in read-only mode, expanding the total catalog from 11 to 18 tools.
+2. **Token-Efficient HAL Normalization**:
+   - Implement tailored normalizers for all new endpoints:
+     - Meeting models normalize project, author, and participant references.
+     - Meeting details concurrently fetch `/api/v3/meetings/{id}/agenda_items` to embed clean agenda items, durations, sections, notes, and outcomes without deep `_links` bloat.
+     - Wiki pages embed attachments with download URLs, sizes, and MIME types.
+     - Work package activities parse raw comment text, extract user references, and normalize property change details.
+3. **Smart Wiki Discovery Strategy (Sequential Probing with Consecutive 404 Cutoff & Caching)**:
+   - To overcome the lack of an OpenProject collection endpoint for wiki pages:
+     a. Query `/api/v3/wiki_page_links` to harvest referenced wiki pages.
+     b. Probe sequential IDs starting from ID 1 (`/api/v3/wiki_pages/{id}`) with a consecutive 404 threshold stop (halt after 5 consecutive misses).
+     c. Cache discovered pages in an in-memory map keyed by client `baseUrl`.
+     d. Filter discovered pages by project (resolving numeric ID or slug) and search queries against page titles.
+     e. Support a `refreshCache: true` parameter for forcing cache invalidation.
+4. **Deep Meeting Search**:
+   - Provide `openproject_search_meetings` that searches meeting titles and locations, while concurrently inspecting agenda item titles, discussion notes, and outcome minutes to return snippet matches and identify match origin (`title`, `location`, or `agenda_item`).
+
+### Consequences
+- **Positive**:
+  - Full visibility for LLMs into team discussions, meetings, agendas, wiki documentation, and work package comment history.
+  - Expands MCP catalog to 18 tools across both stdio and HTTP/SSE/OpenAPI transports.
+  - Zero performance regression: smart wiki discovery avoids repetitive scanning via memory caching, while consecutive 404 cutoff bounds HTTP traffic.
+  - Token-efficient representations conserve LLM context window.
+  - Maintains strict read-only safety guarantees across all new tools.
+- **Negative**:
+  - OpenProject API lack of a native wiki collection endpoint requires heuristic discovery probing.
+  - Deep meeting search requires additional sub-requests for agenda items on candidate meetings, bounded by pagination limits.
+
+
 

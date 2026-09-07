@@ -10,6 +10,9 @@ It allows agents to browse, query, and reason about OpenProject workspaces using
 
 - **Project Discovery**: List accessible projects, inspect hierarchies, and retrieve project details.
 - **Work Package Browsing**: Query work packages with status, type, assignee, priority, and custom filters; inspect work package details and parent/child relationships.
+- **Activities & Comment History**: Inspect full timeline events and discussions for work packages with comments-only filtering.
+- **Meetings & Agendas**: List meetings, inspect detailed agendas with section timings and outcomes, and perform deep keyword searches across meetings and agenda notes.
+- **Wikis & Documentation**: Discover and search wiki pages with smart discovery caching, view page metadata, inspect file attachments, and trace work package links.
 - **Saved Queries (Views)**: Discover and execute saved project and global queries.
 - **Taxonomies & Metadata**: Query work package types (Tasks, Bugs, Features), statuses, priorities, and users to enable structured agent reasoning.
 - **OpenAPI Schema Introspection**: Query dynamic endpoint specifications, parameter schemas, and data models directly from the connected OpenProject instance with in-memory caching.
@@ -341,15 +344,26 @@ This launches a local web UI (typically at `http://localhost:5173`) where you ca
 
 ## Available MCP Tools
 
-`openproject-mcp` currently exposes 11 tools:
+`openproject-mcp` currently exposes 18 tools:
 
 ### Projects
 - `openproject_list_projects`: List projects with pagination (`offset`, `pageSize`), sorting (`sortBy`), and filtering.
 - `openproject_get_project`: Retrieve project details and metadata by ID or identifier (e.g. `projectId: "mcp-test-project"` or `projectId: 4`).
 
-### Work Packages
+### Work Packages & Activities
 - `openproject_list_work_packages`: Query work packages with high-level filters (`projectId`, `status`, `typeId`, `assigneeId`, `priorityId`, `subject`, `pageSize`, `offset`) or custom JSON filter expressions.
 - `openproject_get_work_package`: Retrieve detailed information for a specific work package by ID (`workPackageId: 38`), including description, type, status, priority, author, dates, parent, and children.
+- `openproject_list_work_package_activities`: Retrieve timeline history, field change logs, and discussions for a work package (`workPackageId: 38`), with optional `onlyComments` filtering.
+
+### Meetings
+- `openproject_list_meetings`: List and filter meetings visible to the user by project (`projectId`) or time context (`time: "upcoming"` / `"past"`), with pagination (`offset`, `pageSize`).
+- `openproject_get_meeting`: Retrieve detailed meeting information by ID (`id: 2`), including structured agenda items, sections, notes, outcomes, and participants.
+- `openproject_search_meetings`: Deep search across meeting titles, locations, and agenda item notes by keyword (`query: "planning"`).
+
+### Wikis
+- `openproject_get_wiki_page`: Retrieve wiki page metadata, project, and attachments by numeric ID (`id: 1`).
+- `openproject_search_wiki_pages`: Discover and search wiki pages matching keywords or project with smart caching discovery (`query: "architecture"`, `projectId: "demo-project"`).
+- `openproject_list_wiki_page_links`: List links connecting work packages to wiki pages (`workPackageId: 38`, `offset`, `pageSize`).
 
 ### Saved Queries & Views
 - `openproject_list_queries`: List saved queries/views accessible to the authenticated user, optionally scoped to a project.
@@ -378,6 +392,11 @@ Once connected in Claude Desktop, Cursor, or your agent of choice, you can ask q
 - *"Show me all open bugs in the 'mcp-test-project' project."*
 - *"What work packages are assigned to me, and what are their priorities?"*
 - *"Get details for work package #38 including its child tasks."*
+- *"Show all comments and discussion history on work package #38."*
+- *"List upcoming meetings and show the agenda items for our weekly planning meeting."*
+- *"Search our meeting notes to see if anyone discussed the new architecture."*
+- *"Find wiki pages discussing 'architecture' or 'setup' and list their attachments."*
+- *"What wiki pages are linked to work package #38?"*
 - *"Show the saved queries available for project 4 and run 'MCP Active Tasks'."*
 - *"What work package types and statuses are available in our OpenProject instance?"*
 - *"Inspect the OpenAPI schema for creating work packages using openproject_get_openapi_spec."*
@@ -490,8 +509,9 @@ PORT=3000 bun run src/index.ts
 
 - **Phase 1 (Completed)**: Read-only browsing tools for projects, work packages, queries, taxonomies, and OpenAPI introspection.
 - **Phase 4 (Completed)**: Remote HTTP/SSE transport (`Bun.serve`) with multi-tenant per-session credential scoping and Docker Compose deployment.
+- **Phase 3 Extension (Completed)**: Read-only collaboration tools across Meetings, Wikis, and Work Package Activities (18 tools total).
 - **Phase 2 (Upcoming)**: Mutating operations (create/update work packages, add comments, log time).
-- **Phase 3**: Attachment reading and document resources.
+- **Phase 3 (Future)**: Binary attachment downloading and resource streaming.
 
 ---
 

@@ -24,9 +24,12 @@ flowchart LR
 
     subgraph DomainServices ["Domain Services (Stateless)"]
         ProjSvc["Projects Service"]
-        WpSvc["Work Packages Service"]
+        WpSvc["Work Packages Service\n(& Activities)"]
         QuerySvc["Queries Service"]
         MetaSvc["Metadata & Taxonomies"]
+        OpenApiSvc["OpenAPI Introspection"]
+        MeetSvc["Meetings Service"]
+        WikiSvc["Wikis Service"]
     end
 
     subgraph Remote ["OpenProject Instance"]
@@ -61,9 +64,12 @@ The system is organized into four modular layers:
 ### 2.2. Domain Services / Tool Providers
 Domain services map MCP tool calls to concrete business logic and OpenProject API operations:
 - **Projects Service**: Listing accessible projects, retrieving project details, and fetching project-level schemas.
-- **Work Packages Service**: Listing work packages with filters, searching by text or ID, retrieving work package details, and inspecting relations.
+- **Work Packages Service**: Listing work packages with filters, searching by text or ID, retrieving work package details, inspecting relations, and browsing work package timeline activities and comments.
 - **Queries Service**: Listing saved queries (views) configured in OpenProject and executing them.
 - **Metadata & Taxonomies Service**: Retrieving statuses, work package types, priorities, categories, versions, and users to enable LLMs to construct valid queries and interpret responses.
+- **OpenAPI Introspection Service**: Dynamic API v3 schema introspection, endpoint parameter schemas, tag discovery, and model definitions with in-memory caching.
+- **Meetings Service**: Listing and filtering meetings (upcoming/past), retrieving meeting details with structured agenda items, sections, and outcomes, and deep keyword search across meeting titles, locations, and agenda item notes.
+- **Wikis Service**: Retrieving wiki pages with embedded attachments, smart discovery search across wiki pages using cached harvesting and consecutive 404 cutoff, and listing wiki page links to work packages.
 
 ### 2.3. OpenProject Client Layer
 - **HTTP Transport**: Handles HTTPS communication against the configured `OPENPROJECT_BASE_URL`.
@@ -135,7 +141,7 @@ The server is architected from the ground up to support concurrent, multi-user o
 
 ---
 
-## 4. Tool Specifications (Browse & Query Scope)
+## 4. Tool Specifications (Browse & Query Scope - 18 Tools)
 
 | MCP Tool Name | Description | Key Parameters |
 | :--- | :--- | :--- |
@@ -143,13 +149,20 @@ The server is architected from the ground up to support concurrent, multi-user o
 | `openproject_get_project` | Get details of a single project by ID or identifier | `projectId` (number or string identifier) |
 | `openproject_list_work_packages` | Browse work packages with filtering and pagination | `projectId`, `status`, `type`, `pageSize`, `offset`, `filters` |
 | `openproject_get_work_package` | Get full details of a specific work package | `workPackageId` (number) |
+| `openproject_list_work_package_activities` | Retrieve timeline activities and comments for a work package | `workPackageId` (number), `onlyComments` (boolean) |
 | `openproject_list_queries` | List saved project or global queries (views) | `projectId`, `pageSize`, `offset` |
 | `openproject_get_query` | Retrieve details and results of a saved query | `queryId` (number) |
 | `openproject_list_types` | List all available work package types (Task, Bug, Milestone, etc.) | None |
 | `openproject_list_statuses` | List all available work package statuses (New, In Progress, Closed, etc.) | None |
 | `openproject_list_priorities` | List all priority levels | None |
 | `openproject_list_users` | List users in the OpenProject instance | `pageSize`, `offset` |
-| `openproject_get_openapi_spec` | Retrieve OpenProject API v3 OpenAPI specification for schema introspection | `path` |
+| `openproject_get_openapi_spec` | Retrieve OpenProject API v3 OpenAPI specification for schema introspection | `summary`, `path`, `tag`, `schema` |
+| `openproject_list_meetings` | List and filter meetings visible to the user | `projectId`, `time`, `offset`, `pageSize` |
+| `openproject_get_meeting` | Retrieve detailed meeting information including agenda items, sections, notes, and participants | `id` (number), `includeAgendaItems` (boolean) |
+| `openproject_search_meetings` | Search across meetings and agenda items by keywords | `query` (string), `projectId`, `offset`, `pageSize` |
+| `openproject_get_wiki_page` | Retrieve wiki page metadata, project, and attachments by numeric ID | `id` (number) |
+| `openproject_search_wiki_pages` | Discover and search wiki pages matching keywords or project | `query`, `projectId`, `limit`, `refreshCache` |
+| `openproject_list_wiki_page_links` | List links connecting work packages to wiki pages | `workPackageId`, `offset`, `pageSize` |
 
 ---
 
@@ -218,11 +231,14 @@ openproject-mcp/
 │   ├── config/
 │   │   └── index.ts             # Configuration loader and Zod schema
 │   ├── services/
+│   │   ├── helper.ts            # Client and project resolution helpers
 │   │   ├── projects.ts          # Projects domain service
-│   │   ├── work-packages.ts     # Work packages domain service
+│   │   ├── work-packages.ts     # Work packages & activities domain service
 │   │   ├── queries.ts           # Queries domain service
 │   │   ├── metadata.ts          # Types, statuses, priorities, users
-│   │   └── openapi.ts           # OpenAPI specification discovery & caching
+│   │   ├── openapi.ts           # OpenAPI specification discovery & caching
+│   │   ├── meetings.ts          # Meetings domain service & search
+│   │   └── wikis.ts             # Wikis domain service & discovery cache
 │   └── tools/
 │       ├── common.ts            # Common schemas and error formatters
 │       ├── index.ts             # Tool registration and execution wrapper
@@ -230,7 +246,9 @@ openproject-mcp/
 │       ├── openapi.ts           # MCP tool definition for OpenAPI introspection
 │       ├── projects.ts          # MCP tool definitions for projects
 │       ├── queries.ts           # MCP tool definitions for saved queries
-│       └── work-packages.ts     # MCP tool definitions for work packages
+│       ├── work-packages.ts     # MCP tool definitions for work packages & activities
+│       ├── meetings.ts          # MCP tool definitions for meetings
+│       └── wikis.ts             # MCP tool definitions for wikis
 ├── tests/
 │   ├── fixtures/                # HAL+JSON mock fixtures
 │   ├── client.test.ts           # OpenProject client unit tests
@@ -238,11 +256,14 @@ openproject-mcp/
 │   ├── docker.test.ts           # Docker packaging and compose tests
 │   ├── http-server.test.ts      # Hosted HTTP/SSE server and protocol tests
 │   ├── mcp-server.test.ts       # MCP server stdio integration tests
+│   ├── meetings.test.ts         # Meetings domain service tests
 │   ├── openapi.test.ts          # OpenAPI service and tool tests
 │   ├── read-only.test.ts        # Read-only execution mode guard tests
 │   ├── services.test.ts         # Domain services integration tests
 │   ├── smoke.test.ts            # Metadata and smoke tests
-│   └── tools.test.ts            # Tool registration unit tests
+│   ├── tools.test.ts            # Tool registration unit tests
+│   ├── wikis.test.ts            # Wikis domain service tests
+│   └── work-package-activities.test.ts # Activities service unit tests
 ├── AGENTS.md                    # Operating guidelines for AI agents
 ├── package.json                 # Project dependencies and scripts
 ├── bun.lock                     # Bun dependency lockfile
@@ -255,5 +276,6 @@ openproject-mcp/
 
 - **Phase 1 (Completed)**: Read/browse capability for projects, work packages, queries, taxonomies, and OpenAPI introspection.
 - **Phase 4 (Completed)**: Hosted remote MCP server (HTTP/SSE transport via `Bun.serve`) with multi-tenant per-session credential scoping and Docker Compose deployment.
+- **Phase 3 Extension (Completed)**: Read-only collaboration tools across Meetings (listing, detail inspection, deep keyword search across agenda notes), Wikis (page retrieval, smart discovery search, and links), and Work Package Activities (history and comments filtering). Total catalog: 18 tools.
 - **Phase 2 (Upcoming)**: Mutating operations (create/update work packages, add comments, log time).
-- **Phase 3**: Attachment inspection and download resources.
+- **Phase 3 (Future)**: Attachment binary download resources.
