@@ -14,6 +14,8 @@ import { workPackageTools } from "./work-packages";
 import { queryTools } from "./queries";
 import { metadataTools } from "./metadata";
 import { openApiTools } from "./openapi";
+import { meetingsTools, registerMeetingsTools } from "./meetings";
+import { wikisTools, registerWikisTools } from "./wikis";
 
 export * from "./common";
 export * from "./projects";
@@ -21,13 +23,19 @@ export * from "./work-packages";
 export * from "./queries";
 export * from "./metadata";
 export * from "./openapi";
+export * from "./meetings";
+export * from "./wikis";
+
+export { registerMeetingsTools, registerWikisTools };
 
 export type AnyToolDefinition =
   | (typeof projectTools)[number]
   | (typeof workPackageTools)[number]
   | (typeof queryTools)[number]
   | (typeof metadataTools)[number]
-  | (typeof openApiTools)[number];
+  | (typeof openApiTools)[number]
+  | (typeof meetingsTools)[number]
+  | (typeof wikisTools)[number];
 
 export const allTools: AnyToolDefinition[] = [
   ...projectTools,
@@ -35,6 +43,8 @@ export const allTools: AnyToolDefinition[] = [
   ...queryTools,
   ...metadataTools,
   ...openApiTools,
+  ...meetingsTools,
+  ...wikisTools,
 ];
 
 export interface RegisterToolsOptions {

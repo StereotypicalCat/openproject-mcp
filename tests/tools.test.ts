@@ -1640,8 +1640,8 @@ describe("Wikis Tools", () => {
 });
 
 describe("Tool Registry", () => {
-  test("allTools contains exactly 12 tools including OpenAPI spec", () => {
-    expect(allTools).toHaveLength(12);
+  test("allTools contains exactly 18 tools including OpenAPI spec, meetings, and wikis", () => {
+    expect(allTools).toHaveLength(18);
     const names = allTools.map((t) => t.name);
     expect(names).toEqual([
       "openproject_list_projects",
@@ -1656,6 +1656,12 @@ describe("Tool Registry", () => {
       "openproject_list_priorities",
       "openproject_list_users",
       "openproject_get_openapi_spec",
+      "openproject_list_meetings",
+      "openproject_get_meeting",
+      "openproject_search_meetings",
+      "openproject_get_wiki_page",
+      "openproject_search_wiki_pages",
+      "openproject_list_wiki_page_links",
     ]);
   });
 
@@ -1665,7 +1671,7 @@ describe("Tool Registry", () => {
     }
   });
 
-  test("registerAllTools registers all 12 tools on McpServer", () => {
+  test("registerAllTools registers all 18 tools on McpServer", () => {
     const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
     registerAllTools(server);
 
@@ -1675,7 +1681,7 @@ describe("Tool Registry", () => {
       }
     )._registeredTools;
 
-    expect(Object.keys(registeredTools)).toHaveLength(12);
+    expect(Object.keys(registeredTools)).toHaveLength(18);
     for (const tool of allTools) {
       expect(registeredTools[tool.name]).toBeDefined();
     }
@@ -1707,7 +1713,7 @@ describe("Tool Registry", () => {
     expect(
       registeredTools["openproject_synthetic_mutating_tool"]
     ).toBeUndefined();
-    expect(Object.keys(registeredTools)).toHaveLength(12);
+    expect(Object.keys(registeredTools)).toHaveLength(18);
     for (const tool of allTools) {
       expect(registeredTools[tool.name]).toBeDefined();
     }

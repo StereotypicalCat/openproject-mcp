@@ -5,7 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createServer, SERVER_NAME, SERVER_VERSION } from "../src/server";
 
 describe("MCP Server Factory", () => {
-  test("creates server and lists all 11 tools via InMemoryTransport", async () => {
+  test("creates server and lists all 18 tools via InMemoryTransport", async () => {
     const config = {
       baseUrl: "http://localhost:8080",
       apiKey: "test-key",
@@ -21,12 +21,13 @@ describe("MCP Server Factory", () => {
     await client.connect(clientTransport);
 
     const toolsResult = await client.listTools();
-    expect(toolsResult.tools).toHaveLength(11);
+    expect(toolsResult.tools).toHaveLength(18);
     const names = toolsResult.tools.map((t) => t.name);
     expect(names).toContain("openproject_list_projects");
     expect(names).toContain("openproject_get_project");
     expect(names).toContain("openproject_list_work_packages");
     expect(names).toContain("openproject_get_work_package");
+    expect(names).toContain("openproject_list_work_package_activities");
     expect(names).toContain("openproject_list_queries");
     expect(names).toContain("openproject_get_query");
     expect(names).toContain("openproject_list_types");
@@ -34,6 +35,12 @@ describe("MCP Server Factory", () => {
     expect(names).toContain("openproject_list_priorities");
     expect(names).toContain("openproject_list_users");
     expect(names).toContain("openproject_get_openapi_spec");
+    expect(names).toContain("openproject_list_meetings");
+    expect(names).toContain("openproject_get_meeting");
+    expect(names).toContain("openproject_search_meetings");
+    expect(names).toContain("openproject_get_wiki_page");
+    expect(names).toContain("openproject_search_wiki_pages");
+    expect(names).toContain("openproject_list_wiki_page_links");
 
     await client.close();
     await mcpServer.stop();
@@ -136,7 +143,7 @@ describe("MCP Server Factory", () => {
 
     // In read-only mode, only readOnly: true tools should be registered
     const toolsResult = await client.listTools();
-    expect(toolsResult.tools).toHaveLength(11);
+    expect(toolsResult.tools).toHaveLength(18);
 
     await client.close();
     await mcpServer.stop();

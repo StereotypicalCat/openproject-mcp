@@ -641,12 +641,19 @@ describe("Metadata Service", () => {
     expect(typeof domainServices.getProjectSchema).toBe("function");
     expect(typeof domainServices.listWorkPackages).toBe("function");
     expect(typeof domainServices.getWorkPackage).toBe("function");
+    expect(typeof domainServices.listWorkPackageActivities).toBe("function");
     expect(typeof domainServices.listQueries).toBe("function");
     expect(typeof domainServices.getQuery).toBe("function");
     expect(typeof domainServices.listStatuses).toBe("function");
     expect(typeof domainServices.listTypes).toBe("function");
     expect(typeof domainServices.listPriorities).toBe("function");
     expect(typeof domainServices.listUsers).toBe("function");
+    expect(typeof domainServices.listMeetings).toBe("function");
+    expect(typeof domainServices.getMeeting).toBe("function");
+    expect(typeof domainServices.searchMeetings).toBe("function");
+    expect(typeof domainServices.getWikiPage).toBe("function");
+    expect(typeof domainServices.searchWikiPages).toBe("function");
+    expect(typeof domainServices.listWikiPageLinks).toBe("function");
   });
 });
 

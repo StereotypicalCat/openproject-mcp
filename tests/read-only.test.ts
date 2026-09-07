@@ -74,7 +74,7 @@ describe("Read-Only Mode Enforcement", () => {
     expect(configFalse.readOnly).toBe(false);
   });
 
-  test("read-only server lists all 11 tools (all are readOnly: true)", async () => {
+  test("read-only server lists all 18 tools (all are readOnly: true)", async () => {
     const mcpServer = createServer({
       baseUrl: "http://localhost:8080",
       apiKey: "test-key",
@@ -87,7 +87,7 @@ describe("Read-Only Mode Enforcement", () => {
     await client.connect(clientTransport);
 
     const toolsResult = await client.listTools();
-    expect(toolsResult.tools).toHaveLength(11);
+    expect(toolsResult.tools).toHaveLength(18);
 
     await client.close();
     await mcpServer.stop();
@@ -118,7 +118,7 @@ describe("Read-Only Mode Enforcement", () => {
     const standaloneTools = await client2.listTools();
     const standaloneNames = standaloneTools.tools.map((t) => t.name);
     expect(standaloneNames).not.toContain("openproject_create_work_package_synthetic");
-    expect(standaloneTools.tools).toHaveLength(11);
+    expect(standaloneTools.tools).toHaveLength(18);
 
     await client2.close();
     await standaloneServer.close();
