@@ -1549,6 +1549,9 @@ describe("Wikis Tools", () => {
     expect(() => schema.parse({ limit: 0 })).toThrow();
     expect(() => schema.parse({ limit: -5 })).toThrow();
     expect(() => schema.parse({ limit: 150 })).toThrow();
+    expect(() => schema.parse({ projectId: "" })).toThrow();
+    expect(() => schema.parse({ projectId: 0 })).toThrow();
+    expect(() => schema.parse({ projectId: -1 })).toThrow();
   });
 
   test("handleSearchWikiPages catches errors and returns error response", async () => {

@@ -48,7 +48,7 @@ export const searchWikiPagesShape = {
     .optional()
     .describe("Substring keyword to match in wiki page title"),
   projectId: z
-    .union([z.string(), z.number()])
+    .union([z.number().int().positive(), z.string().min(1)])
     .optional()
     .describe("Project ID or identifier to scope search"),
   limit: z
