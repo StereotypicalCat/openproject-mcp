@@ -45,14 +45,14 @@ describe("Work Package Activities Service", () => {
 
     const all = await listWorkPackageActivities({ workPackageId: 38 }, mockClient);
     expect(all).toHaveLength(2);
-    expect(all[0].isComment).toBe(false);
-    expect(all[1].isComment).toBe(true);
-    expect(all[1].comment).toBe("Fixed in commit abc1234");
-    expect(all[1].user?.name).toBe("Dev User");
+    expect(all[0]!.isComment).toBe(false);
+    expect(all[1]!.isComment).toBe(true);
+    expect(all[1]!.comment).toBe("Fixed in commit abc1234");
+    expect(all[1]!.user?.name).toBe("Dev User");
 
     const commentsOnly = await listWorkPackageActivities({ workPackageId: 38, onlyComments: true }, mockClient);
     expect(commentsOnly).toHaveLength(1);
-    expect(commentsOnly[0].id).toBe(61);
+    expect(commentsOnly[0]!.id).toBe(61);
   });
 
   test("handles empty activities collection and fallback user formatting", async () => {
@@ -78,11 +78,11 @@ describe("Work Package Activities Service", () => {
 
     const res = await listWorkPackageActivities({ workPackageId: 10 }, mockClient);
     expect(res).toHaveLength(1);
-    expect(res[0].id).toBe(99);
-    expect(res[0].user).toEqual({ id: 42, name: "User #42" });
-    expect(res[0].comment).toBeUndefined();
-    expect(res[0].isComment).toBe(false);
-    expect(res[0].details).toEqual([]);
+    expect(res[0]!.id).toBe(99);
+    expect(res[0]!.user).toEqual({ id: 42, name: "User #42" });
+    expect(res[0]!.comment).toBeUndefined();
+    expect(res[0]!.isComment).toBe(false);
+    expect(res[0]!.details).toEqual([]);
   });
 
   test("handles missing _embedded or empty elements gracefully", async () => {

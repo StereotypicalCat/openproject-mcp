@@ -379,11 +379,12 @@ export async function searchMeetings(
   const needle = params.query.toLowerCase().trim();
 
   // Fetch candidate meetings scoped to project if specified
+  const candidateBatchSize = Math.max(params.pageSize ?? 50, 50);
   const meetingsResult = await listMeetings(
     {
       projectId: params.projectId,
-      offset: params.offset ?? 1,
-      pageSize: params.pageSize ?? 50,
+      offset: 1,
+      pageSize: candidateBatchSize,
     },
     opClient
   );
@@ -458,12 +459,18 @@ export async function searchMeetings(
     (item): item is MeetingSearchResult => item !== null
   );
 
+  const total = matchedElements.length;
+  const offset = params.offset ?? 1;
+  const requestedPageSize = params.pageSize ?? 20;
+  const startIndex = Math.max(0, offset - 1);
+  const pagedElements = matchedElements.slice(startIndex, startIndex + requestedPageSize);
+
   return {
-    total: matchedElements.length,
-    count: matchedElements.length,
-    pageSize: params.pageSize ?? matchedElements.length,
-    offset: params.offset ?? 1,
-    elements: matchedElements,
-    items: matchedElements,
+    total,
+    count: pagedElements.length,
+    pageSize: requestedPageSize,
+    offset,
+    elements: pagedElements,
+    items: pagedElements,
   };
 }

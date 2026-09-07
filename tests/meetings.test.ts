@@ -37,8 +37,8 @@ describe("Meetings Service", () => {
 
     const res = await listMeetings({ projectId: 1 }, mockClient);
     expect(res.total).toBe(1);
-    expect(res.elements[0].title).toBe("Weekly Planning");
-    expect(res.elements[0].project.name).toBe("Demo project");
+    expect(res.elements[0]!.title).toBe("Weekly Planning");
+    expect(res.elements[0]!.project.name).toBe("Demo project");
   });
 
   test("getMeeting fetches details and embeds agenda items", async () => {
@@ -88,8 +88,8 @@ describe("Meetings Service", () => {
     const meeting = await getMeeting(2, { includeAgendaItems: true }, mockClient);
     expect(meeting.title).toBe("Weekly Planning");
     expect(meeting.agendaItems).toHaveLength(1);
-    expect(meeting.agendaItems![0].title).toBe("Good news");
-    expect(meeting.agendaItems![0].notes).toBe("What went well this week?");
+    expect(meeting.agendaItems![0]!.title).toBe("Good news");
+    expect(meeting.agendaItems![0]!.notes).toBe("What went well this week?");
   });
 
   test("searchMeetings finds matches in agenda notes", async () => {
@@ -138,12 +138,11 @@ describe("Meetings Service", () => {
 
     const res = await searchMeetings({ query: "architecture" }, mockClient);
     expect(res.total).toBe(1);
-    expect(res.elements[0].matchType).toBe("agenda_item");
-    expect(res.elements[0].matchedAgendaItems![0].snippet).toContain("architecture");
+    expect(res.elements[0]!.matchType).toBe("agenda_item");
+    expect(res.elements[0]!.matchedAgendaItems![0]!.snippet).toContain("architecture");
   });
 
-  test("searchMeetings matches by title and location without calling agenda items", async () => {
-    let agendaItemsCalled = false;
+  test("searchMeetings matches by title and location", async () => {
     const mockClient = {
       get: async (path: string) => {
         if (path.startsWith("/api/v3/meetings?")) {
@@ -181,7 +180,6 @@ describe("Meetings Service", () => {
           };
         }
         if (path.includes("/agenda_items")) {
-          agendaItemsCalled = true;
           return { _type: "Collection", total: 0, _embedded: { elements: [] } };
         }
         throw new Error(`Unexpected path: ${path}`);
@@ -190,13 +188,68 @@ describe("Meetings Service", () => {
 
     const titleRes = await searchMeetings({ query: "Retrospective" }, mockClient);
     expect(titleRes.total).toBe(1);
-    expect(titleRes.elements[0].matchType).toBe("title");
-    expect(titleRes.elements[0].meeting.id).toBe(20);
+    expect(titleRes.elements[0]!.matchType).toBe("title");
+    expect(titleRes.elements[0]!.meeting.id).toBe(20);
 
     const locRes = await searchMeetings({ query: "Virtual" }, mockClient);
     expect(locRes.total).toBe(1);
-    expect(locRes.elements[0].matchType).toBe("location");
-    expect(locRes.elements[0].meeting.id).toBe(21);
+    expect(locRes.elements[0]!.matchType).toBe("location");
+    expect(locRes.elements[0]!.meeting.id).toBe(21);
+  });
+
+  test("searchMeetings slices matched elements according to offset and pageSize", async () => {
+    const mockClient = {
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/meetings?")) {
+          return {
+            _type: "Collection",
+            total: 3,
+            _embedded: {
+              elements: [
+                {
+                  _type: "Meeting",
+                  id: 1,
+                  title: "Arch Review 1",
+                  state: "open",
+                  startTime: "2026-09-01T10:00:00Z",
+                  endTime: "2026-09-01T11:00:00Z",
+                  _links: { project: { href: "/api/v3/projects/1", title: "Demo" } }
+                },
+                {
+                  _type: "Meeting",
+                  id: 2,
+                  title: "Arch Review 2",
+                  state: "open",
+                  startTime: "2026-09-02T10:00:00Z",
+                  endTime: "2026-09-02T11:00:00Z",
+                  _links: { project: { href: "/api/v3/projects/1", title: "Demo" } }
+                },
+                {
+                  _type: "Meeting",
+                  id: 3,
+                  title: "Arch Review 3",
+                  state: "open",
+                  startTime: "2026-09-03T10:00:00Z",
+                  endTime: "2026-09-03T11:00:00Z",
+                  _links: { project: { href: "/api/v3/projects/1", title: "Demo" } }
+                }
+              ]
+            }
+          };
+        }
+        if (path.includes("/agenda_items")) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        throw new Error(`Unexpected path: ${path}`);
+      }
+    } as unknown as OpenProjectClient;
+
+    const res = await searchMeetings({ query: "Arch", offset: 2, pageSize: 1 }, mockClient);
+    expect(res.total).toBe(3);
+    expect(res.count).toBe(1);
+    expect(res.pageSize).toBe(1);
+    expect(res.offset).toBe(2);
+    expect(res.elements[0]!.meeting.id).toBe(2);
   });
 
   test("listMeetings supports time filter (upcoming and past)", async () => {
