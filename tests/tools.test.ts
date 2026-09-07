@@ -25,6 +25,9 @@ import {
   handleListWorkPackages,
   getWorkPackageShape,
   handleGetWorkPackage,
+  listWorkPackageActivitiesShape,
+  handleListWorkPackageActivities,
+  listWorkPackageActivitiesTool,
   workPackageTools,
   registerWorkPackageTools,
 } from "../src/tools/work-packages";
@@ -481,13 +484,107 @@ describe("Work Package Tools", () => {
     expect(response.content[0]?.text).toContain("Work package not found");
   });
 
+  test("listWorkPackageActivitiesTool has readOnly: true and valid schema", () => {
+    expect(listWorkPackageActivitiesTool.name).toBe(
+      "openproject_list_work_package_activities"
+    );
+    expect(listWorkPackageActivitiesTool.readOnly).toBe(true);
+    expect(listWorkPackageActivitiesTool.description).toContain(
+      "Retrieve timeline activities and comments for a work package"
+    );
+    expect(listWorkPackageActivitiesTool.parameters).toBeDefined();
+    expect(workPackageTools).toContain(listWorkPackageActivitiesTool);
+  });
+
+  test("listWorkPackageActivities parses parameters and returns activities", async () => {
+    const dummyClientWithActivities = {
+      get: async (path: string) => {
+        if (
+          path === "/api/v3/work_packages/38/activities" ||
+          path === "work_packages/38/activities"
+        ) {
+          return {
+            _type: "Collection",
+            total: 1,
+            count: 1,
+            _embedded: {
+              elements: [
+                {
+                  id: 101,
+                  version: 1,
+                  createdAt: "2026-09-06T10:00:00Z",
+                  comment: { raw: "A test comment" },
+                  details: [],
+                  _links: { user: { href: "/api/v3/users/5", title: "Bob" } },
+                },
+              ],
+            },
+          };
+        }
+        throw new Error(`Unexpected path: ${path}`);
+      },
+    } as unknown as OpenProjectClient;
+
+    const schema = z.object(listWorkPackageActivitiesShape);
+    const parsed = schema.parse({ workPackageId: 38, onlyComments: true });
+    const response = await runWithContext(
+      { client: dummyClientWithActivities, isReadOnly: false },
+      () => handleListWorkPackageActivities(parsed)
+    );
+
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "[]");
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(101);
+    expect(result[0].comment).toBe("A test comment");
+    expect(result[0].isComment).toBe(true);
+    expect(result[0].user).toEqual({ id: 5, name: "Bob" });
+  });
+
+  test("listWorkPackageActivities rejects invalid workPackageId", () => {
+    const schema = z.object(listWorkPackageActivitiesShape);
+    expect(() => schema.parse({ workPackageId: 0 })).toThrow();
+    expect(() => schema.parse({ workPackageId: -5 })).toThrow();
+    expect(() => schema.parse({ workPackageId: 3.14 })).toThrow();
+    expect(() => schema.parse({ workPackageId: "38" })).toThrow();
+  });
+
+  test("listWorkPackageActivities defaults onlyComments to false", () => {
+    const schema = z.object(listWorkPackageActivitiesShape);
+    const parsed = schema.parse({ workPackageId: 38 });
+    expect(parsed.onlyComments).toBe(false);
+  });
+
+  test("handleListWorkPackageActivities catches errors and formats error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Work package activities failed");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () =>
+        handleListWorkPackageActivities({
+          workPackageId: 999,
+          onlyComments: false,
+        })
+    );
+
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain(
+      "Work package activities failed"
+    );
+  });
+
   test("registerWorkPackageTools registers tools on McpServer", () => {
     const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
     registerWorkPackageTools(server);
-    expect(workPackageTools).toHaveLength(2);
+    expect(workPackageTools).toHaveLength(3);
     expect(workPackageTools.map((t) => t.name)).toEqual([
       "openproject_list_work_packages",
       "openproject_get_work_package",
+      "openproject_list_work_package_activities",
     ]);
 
     const registeredTools = (
@@ -498,6 +595,9 @@ describe("Work Package Tools", () => {
 
     expect(registeredTools["openproject_list_work_packages"]).toBeDefined();
     expect(registeredTools["openproject_get_work_package"]).toBeDefined();
+    expect(
+      registeredTools["openproject_list_work_package_activities"]
+    ).toBeDefined();
   });
 });
 
@@ -955,14 +1055,15 @@ describe("Metadata Tools", () => {
 });
 
 describe("Tool Registry", () => {
-  test("allTools contains exactly 11 tools including OpenAPI spec", () => {
-    expect(allTools).toHaveLength(11);
+  test("allTools contains exactly 12 tools including OpenAPI spec", () => {
+    expect(allTools).toHaveLength(12);
     const names = allTools.map((t) => t.name);
     expect(names).toEqual([
       "openproject_list_projects",
       "openproject_get_project",
       "openproject_list_work_packages",
       "openproject_get_work_package",
+      "openproject_list_work_package_activities",
       "openproject_list_queries",
       "openproject_get_query",
       "openproject_list_types",
@@ -979,7 +1080,7 @@ describe("Tool Registry", () => {
     }
   });
 
-  test("registerAllTools registers all 11 tools on McpServer", () => {
+  test("registerAllTools registers all 12 tools on McpServer", () => {
     const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
     registerAllTools(server);
 
@@ -989,7 +1090,7 @@ describe("Tool Registry", () => {
       }
     )._registeredTools;
 
-    expect(Object.keys(registeredTools)).toHaveLength(11);
+    expect(Object.keys(registeredTools)).toHaveLength(12);
     for (const tool of allTools) {
       expect(registeredTools[tool.name]).toBeDefined();
     }
@@ -1021,7 +1122,7 @@ describe("Tool Registry", () => {
     expect(
       registeredTools["openproject_synthetic_mutating_tool"]
     ).toBeUndefined();
-    expect(Object.keys(registeredTools)).toHaveLength(11);
+    expect(Object.keys(registeredTools)).toHaveLength(12);
     for (const tool of allTools) {
       expect(registeredTools[tool.name]).toBeDefined();
     }

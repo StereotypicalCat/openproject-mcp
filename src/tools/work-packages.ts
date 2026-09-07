@@ -12,7 +12,11 @@ import {
   type McpToolResponse,
   type ToolDefinition,
 } from "./common";
-import { listWorkPackages, getWorkPackage } from "../services/work-packages";
+import {
+  listWorkPackages,
+  getWorkPackage,
+  listWorkPackageActivities,
+} from "../services/work-packages";
 import type { FilterElement } from "../client/types";
 
 export const listWorkPackagesShape = {
@@ -163,7 +167,59 @@ export const getWorkPackageTool: ToolDefinition<
   execute: handleGetWorkPackage,
 };
 
-export const workPackageTools = [listWorkPackagesTool, getWorkPackageTool];
+export const listWorkPackageActivitiesShape = {
+  workPackageId: z
+    .number()
+    .int()
+    .positive()
+    .describe("Numeric ID of the work package"),
+  onlyComments: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "When true, filters out property change audits and returns only comments"
+    ),
+};
+
+export type ListWorkPackageActivitiesArgs = z.infer<
+  z.ZodObject<typeof listWorkPackageActivitiesShape>
+>;
+
+/**
+ * Tool execution handler for openproject_list_work_package_activities.
+ */
+export async function handleListWorkPackageActivities(
+  args: ListWorkPackageActivitiesArgs
+): Promise<McpToolResponse> {
+  try {
+    const result = await listWorkPackageActivities({
+      workPackageId: args.workPackageId,
+      onlyComments: args.onlyComments,
+    });
+    return formatToolSuccess(result);
+  } catch (error) {
+    return formatToolError(error);
+  }
+}
+
+export const listWorkPackageActivitiesTool: ToolDefinition<
+  typeof listWorkPackageActivitiesShape,
+  ListWorkPackageActivitiesArgs
+> = {
+  name: "openproject_list_work_package_activities",
+  description:
+    "Retrieve timeline activities and comments for a work package. Can optionally filter to only include user comments.",
+  parameters: listWorkPackageActivitiesShape,
+  readOnly: true,
+  execute: handleListWorkPackageActivities,
+};
+
+export const workPackageTools = [
+  listWorkPackagesTool,
+  getWorkPackageTool,
+  listWorkPackageActivitiesTool,
+];
 
 /**
  * Registers all work package tools with an McpServer instance.
@@ -171,4 +227,5 @@ export const workPackageTools = [listWorkPackagesTool, getWorkPackageTool];
 export function registerWorkPackageTools(server: McpServer): void {
   registerTool(server, listWorkPackagesTool);
   registerTool(server, getWorkPackageTool);
+  registerTool(server, listWorkPackageActivitiesTool);
 }
