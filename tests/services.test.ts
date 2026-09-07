@@ -720,5 +720,59 @@ describe("Live Container Integration (Domain Services)", () => {
     const users = await domainServices.listUsers({ pageSize: 5 }, client);
     expect(users.items.length).toBeGreaterThan(0);
   });
+
+  runLiveTests("live: meetings service operations", async () => {
+    const client = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey! });
+
+    // list meetings (should return meetings 2..5)
+    const meetings = await domainServices.listMeetings({ projectId: 1 }, client);
+    expect(meetings.elements.length).toBeGreaterThanOrEqual(4);
+    const meetingIds = meetings.elements.map((m) => m.id);
+    expect(meetingIds).toContain(2);
+    expect(meetingIds).toContain(3);
+    expect(meetingIds).toContain(4);
+    expect(meetingIds).toContain(5);
+
+    // get meeting (should return meeting with title "Weekly" and agenda items)
+    const meeting = await domainServices.getMeeting(2, { includeAgendaItems: true }, client);
+    expect(meeting.id).toBe(2);
+    expect(meeting.title).toBe("Weekly");
+    expect(meeting.agendaItems).toBeDefined();
+    expect(meeting.agendaItems!.length).toBeGreaterThan(0);
+    expect(meeting.agendaItems![0]!.title).toBeDefined();
+
+    // search meetings (should return results with matching items)
+    const searchRes = await domainServices.searchMeetings({ query: "Weekly" }, client);
+    expect(searchRes.elements.length).toBeGreaterThan(0);
+    const match = searchRes.elements.find((r) => r.meeting.title.includes("Weekly"));
+    expect(match).toBeDefined();
+  });
+
+  runLiveTests("live: wikis service operations", async () => {
+    const client = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey! });
+
+    // get wiki page (should return title "Wiki", project id 1)
+    const wiki = await domainServices.getWikiPage(1, client);
+    expect(wiki.id).toBe(1);
+    expect(wiki.title).toBe("Wiki");
+    expect(wiki.project.id).toBe(1);
+
+    // search wiki pages (should discover and return wiki page 1)
+    const searchRes = await domainServices.searchWikiPages({ query: "Wiki" }, client);
+    expect(searchRes.length).toBeGreaterThan(0);
+    const found = searchRes.find((w) => w.id === 1);
+    expect(found).toBeDefined();
+    expect(found!.title).toBe("Wiki");
+    expect(found!.project.id).toBe(1);
+  });
+
+  runLiveTests("live: activities service operations", async () => {
+    const client = new OpenProjectClient({ baseUrl: liveBaseUrl, apiKey: liveApiKey! });
+
+    // list work package activities (should return activities for WP 38)
+    const activities = await domainServices.listWorkPackageActivities({ workPackageId: 38 }, client);
+    expect(activities.length).toBeGreaterThan(0);
+    expect(activities[0]!.id).toBeDefined();
+  });
 });
 

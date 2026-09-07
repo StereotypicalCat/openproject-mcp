@@ -261,5 +261,87 @@ describe("End-to-End Live Tool Calling over MCP Client", () => {
       await mcpServer.stop();
     }
   });
+
+  runLiveTests("calls meetings, wikis, and activities tools via Client", async () => {
+    const mcpServer = createServer({ baseUrl, apiKey: apiKey || "skip", readOnly: false });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await mcpServer.start(serverTransport);
+
+    const client = new Client({ name: "test-runner", version: "1" });
+    await client.connect(clientTransport);
+
+    try {
+      // openproject_list_meetings
+      const listMeetingsRes = (await client.callTool({
+        name: "openproject_list_meetings",
+        arguments: { projectId: 1 },
+      })) as { content: Array<{ type: string; text: string }>; isError?: boolean };
+      expect(listMeetingsRes.isError).toBeFalsy();
+      const meetingsData = JSON.parse(listMeetingsRes.content[0]?.text ?? "{}");
+      expect(meetingsData.total).toBeGreaterThanOrEqual(4);
+      expect(meetingsData.elements.length).toBeGreaterThan(0);
+
+      // openproject_get_meeting
+      const getMeetingRes = (await client.callTool({
+        name: "openproject_get_meeting",
+        arguments: { id: 2, includeAgendaItems: true },
+      })) as { content: Array<{ type: string; text: string }>; isError?: boolean };
+      expect(getMeetingRes.isError).toBeFalsy();
+      const meetingData = JSON.parse(getMeetingRes.content[0]?.text ?? "{}");
+      expect(meetingData.id).toBe(2);
+      expect(meetingData.title).toBe("Weekly");
+      expect(meetingData.agendaItems.length).toBeGreaterThan(0);
+
+      // openproject_search_meetings
+      const searchMeetingsRes = (await client.callTool({
+        name: "openproject_search_meetings",
+        arguments: { query: "Weekly" },
+      })) as { content: Array<{ type: string; text: string }>; isError?: boolean };
+      expect(searchMeetingsRes.isError).toBeFalsy();
+      const searchMeetingsData = JSON.parse(searchMeetingsRes.content[0]?.text ?? "{}");
+      expect(searchMeetingsData.total).toBeGreaterThan(0);
+      expect(searchMeetingsData.elements.length).toBeGreaterThan(0);
+
+      // openproject_get_wiki_page
+      const getWikiRes = (await client.callTool({
+        name: "openproject_get_wiki_page",
+        arguments: { id: 1 },
+      })) as { content: Array<{ type: string; text: string }>; isError?: boolean };
+      expect(getWikiRes.isError).toBeFalsy();
+      const wikiData = JSON.parse(getWikiRes.content[0]?.text ?? "{}");
+      expect(wikiData.id).toBe(1);
+      expect(wikiData.title).toBe("Wiki");
+      expect(wikiData.project.id).toBe(1);
+
+      // openproject_search_wiki_pages
+      const searchWikiRes = (await client.callTool({
+        name: "openproject_search_wiki_pages",
+        arguments: { query: "Wiki" },
+      })) as { content: Array<{ type: string; text: string }>; isError?: boolean };
+      expect(searchWikiRes.isError).toBeFalsy();
+      const searchWikiData = JSON.parse(searchWikiRes.content[0]?.text ?? "[]");
+      expect(Array.isArray(searchWikiData)).toBe(true);
+      expect(searchWikiData.length).toBeGreaterThan(0);
+      expect(
+        searchWikiData.some(
+          (w: { id: number; title: string }) => w.id === 1 && w.title === "Wiki"
+        )
+      ).toBe(true);
+
+      // openproject_list_work_package_activities
+      const activitiesRes = (await client.callTool({
+        name: "openproject_list_work_package_activities",
+        arguments: { workPackageId: 38 },
+      })) as { content: Array<{ type: string; text: string }>; isError?: boolean };
+      expect(activitiesRes.isError).toBeFalsy();
+      const activitiesData = JSON.parse(activitiesRes.content[0]?.text ?? "[]");
+      expect(Array.isArray(activitiesData)).toBe(true);
+      expect(activitiesData.length).toBeGreaterThan(0);
+      expect(activitiesData[0].id).toBeDefined();
+    } finally {
+      await client.close();
+      await mcpServer.stop();
+    }
+  });
 });
 
