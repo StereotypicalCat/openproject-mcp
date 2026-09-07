@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach } from "bun:test";
 import {
   allTools,
   registerAllTools,
@@ -64,11 +64,28 @@ import {
   meetingsTools,
   registerMeetingsTools,
 } from "../src/tools/meetings";
+import {
+  getWikiPageShape,
+  handleGetWikiPage,
+  searchWikiPagesShape,
+  handleSearchWikiPages,
+  listWikiPageLinksShape,
+  handleListWikiPageLinks,
+  getWikiPageTool,
+  searchWikiPagesTool,
+  listWikiPageLinksTool,
+  wikisTools,
+  registerWikisTools,
+} from "../src/tools/wikis";
+import { clearWikiCache } from "../src/services/wikis";
 import { OpenProjectNotFoundError } from "../src/client/errors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { runWithContext } from "../src/context";
-import { OpenProjectClient } from "../src/client/api-client";
+import {
+  OpenProjectClient,
+  OpenProjectAuthenticationError,
+} from "../src/client/api-client";
 
 
 describe("Tool Utilities", () => {
@@ -1326,6 +1343,296 @@ describe("Meeting Tools", () => {
     expect(registeredTools["openproject_list_meetings"]).toBeDefined();
     expect(registeredTools["openproject_get_meeting"]).toBeDefined();
     expect(registeredTools["openproject_search_meetings"]).toBeDefined();
+  });
+});
+
+describe("Wikis Tools", () => {
+  beforeEach(() => {
+    clearWikiCache();
+  });
+
+  const dummyClient = {
+    baseUrl: "http://localhost:8080",
+    get: async (path: string) => {
+      if (path === "/api/v3/wiki_pages/1" || path === "wiki_pages/1") {
+        return {
+          _type: "WikiPage",
+          id: 1,
+          title: "Architecture Guide",
+          _links: {
+            self: { href: "/api/v3/wiki_pages/1" },
+            project: { href: "/api/v3/projects/4", title: "MCP Test Project" },
+          },
+        };
+      }
+      if (
+        path === "/api/v3/wiki_pages/1/attachments" ||
+        path === "wiki_pages/1/attachments"
+      ) {
+        return {
+          _type: "Collection",
+          total: 1,
+          _embedded: {
+            elements: [
+              {
+                _type: "Attachment",
+                id: 99,
+                fileName: "architecture.png",
+                fileSize: 1024,
+                contentType: "image/png",
+                _links: {
+                  downloadLocation: {
+                    href: "/api/v3/attachments/99/content",
+                  },
+                },
+              },
+            ],
+          },
+        };
+      }
+      if (
+        path.startsWith("/api/v3/wiki_page_links") ||
+        path.startsWith("wiki_page_links") ||
+        path.startsWith("/api/v3/work_packages/38/wiki_page_links") ||
+        path.startsWith("work_packages/38/wiki_page_links")
+      ) {
+        return {
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 30,
+          offset: 1,
+          _embedded: {
+            elements: [
+              {
+                _type: "WikiPageLink",
+                id: 10,
+                pageTitle: "Architecture Guide",
+                pageUrl: "http://localhost:8080/projects/demo/wiki/architecture",
+                provider: "openproject",
+                _links: {
+                  self: { href: "/api/v3/wiki_page_links/10" },
+                  wikiPage: { href: "/api/v3/wiki_pages/1" },
+                  workPackage: {
+                    href: "/api/v3/work_packages/38",
+                    title: "Seed Task 1",
+                  },
+                },
+              },
+            ],
+          },
+        };
+      }
+      if (
+        path === "projects/4" ||
+        path === "/api/v3/projects/4" ||
+        path === "projects/mcp-test-project" ||
+        path === "/api/v3/projects/mcp-test-project"
+      ) {
+        return {
+          id: 4,
+          identifier: "mcp-test-project",
+          name: "MCP Test Project",
+        };
+      }
+      const err = new Error("Not found");
+      (err as unknown as { statusCode: number }).statusCode = 404;
+      throw err;
+    },
+  } as unknown as OpenProjectClient;
+
+  test("wikisTools array contains 3 tools and all are readOnly: true", () => {
+    expect(wikisTools).toHaveLength(3);
+    expect(wikisTools.map((t) => t.name)).toEqual([
+      "openproject_get_wiki_page",
+      "openproject_search_wiki_pages",
+      "openproject_list_wiki_page_links",
+    ]);
+    for (const tool of wikisTools) {
+      expect(tool.readOnly).toBe(true);
+    }
+  });
+
+  test("wikis tools have correct metadata and descriptions", () => {
+    expect(getWikiPageTool.name).toBe("openproject_get_wiki_page");
+    expect(getWikiPageTool.description).toBe(
+      "Retrieve wiki page metadata, project, and attachments by numeric ID."
+    );
+    expect(getWikiPageTool.readOnly).toBe(true);
+
+    expect(searchWikiPagesTool.name).toBe("openproject_search_wiki_pages");
+    expect(searchWikiPagesTool.description).toBe(
+      "Discover and search wiki pages matching keywords or project."
+    );
+    expect(searchWikiPagesTool.readOnly).toBe(true);
+
+    expect(listWikiPageLinksTool.name).toBe("openproject_list_wiki_page_links");
+    expect(listWikiPageLinksTool.description).toBe(
+      "List links connecting work packages to wiki pages."
+    );
+    expect(listWikiPageLinksTool.readOnly).toBe(true);
+  });
+
+  test("getWikiPage parses parameters and calls service", async () => {
+    const schema = z.object(getWikiPageShape);
+    const parsed = schema.parse({ id: 1 });
+    expect(parsed.id).toBe(1);
+
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleGetWikiPage(parsed)
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.id).toBe(1);
+    expect(result.title).toBe("Architecture Guide");
+    expect(result.project.id).toBe(4);
+    expect(result.attachments).toHaveLength(1);
+    expect(result.attachments[0].fileName).toBe("architecture.png");
+  });
+
+  test("getWikiPage rejects invalid schema arguments", () => {
+    const schema = z.object(getWikiPageShape);
+    expect(() => schema.parse({})).toThrow();
+    expect(() => schema.parse({ id: 0 })).toThrow();
+    expect(() => schema.parse({ id: -1 })).toThrow();
+    expect(() => schema.parse({ id: 1.5 })).toThrow();
+  });
+
+  test("handleGetWikiPage catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Wiki page not found");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleGetWikiPage({ id: 999 })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Wiki page not found");
+  });
+
+  test("searchWikiPages parses parameters and defaults correctly", async () => {
+    const schema = z.object(searchWikiPagesShape);
+    const parsedDefault = schema.parse({});
+    expect(parsedDefault.limit).toBe(20);
+    expect(parsedDefault.refreshCache).toBe(false);
+
+    const parsedCustom = schema.parse({
+      query: "Guide",
+      projectId: "mcp-test-project",
+      limit: 10,
+      refreshCache: true,
+    });
+    expect(parsedCustom.query).toBe("Guide");
+    expect(parsedCustom.projectId).toBe("mcp-test-project");
+    expect(parsedCustom.limit).toBe(10);
+    expect(parsedCustom.refreshCache).toBe(true);
+
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleSearchWikiPages(parsedCustom)
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "[]");
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe(1);
+    expect(result[0].title).toBe("Architecture Guide");
+    expect(result[0].attachmentsCount).toBe(1);
+  });
+
+  test("searchWikiPages rejects invalid schema arguments", () => {
+    const schema = z.object(searchWikiPagesShape);
+    expect(() => schema.parse({ limit: 0 })).toThrow();
+    expect(() => schema.parse({ limit: -5 })).toThrow();
+    expect(() => schema.parse({ limit: 150 })).toThrow();
+  });
+
+  test("handleSearchWikiPages catches errors and returns error response", async () => {
+    const failingClient = {
+      baseUrl: "http://localhost:8080",
+      get: async () => {
+        throw new OpenProjectAuthenticationError("Unauthorized");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleSearchWikiPages({ query: "fail" })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Unauthorized");
+  });
+
+  test("listWikiPageLinks parses parameters and defaults correctly", async () => {
+    const schema = z.object(listWikiPageLinksShape);
+    const parsedDefault = schema.parse({});
+    expect(parsedDefault.offset).toBe(1);
+    expect(parsedDefault.pageSize).toBe(30);
+
+    const parsedCustom = schema.parse({
+      workPackageId: 38,
+      offset: 2,
+      pageSize: 15,
+    });
+    expect(parsedCustom.workPackageId).toBe(38);
+    expect(parsedCustom.offset).toBe(2);
+    expect(parsedCustom.pageSize).toBe(15);
+
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListWikiPageLinks(parsedCustom)
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.elements).toBeDefined();
+    expect(result.elements).toHaveLength(1);
+    expect(result.elements[0].id).toBe(10);
+    expect(result.elements[0].pageTitle).toBe("Architecture Guide");
+  });
+
+  test("listWikiPageLinks rejects invalid schema arguments", () => {
+    const schema = z.object(listWikiPageLinksShape);
+    expect(() => schema.parse({ pageSize: 0 })).toThrow();
+    expect(() => schema.parse({ pageSize: -1 })).toThrow();
+    expect(() => schema.parse({ pageSize: 200 })).toThrow();
+    expect(() => schema.parse({ offset: 0 })).toThrow();
+    expect(() => schema.parse({ offset: -1 })).toThrow();
+    expect(() => schema.parse({ workPackageId: 0 })).toThrow();
+    expect(() => schema.parse({ workPackageId: -1 })).toThrow();
+  });
+
+  test("handleListWikiPageLinks catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Wiki links service failure");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleListWikiPageLinks({ offset: 1, pageSize: 30 })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Wiki links service failure");
+  });
+
+  test("registerWikisTools registers all 3 wiki tools on McpServer", () => {
+    const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
+    registerWikisTools(server);
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<string, unknown>;
+      }
+    )._registeredTools;
+
+    expect(registeredTools["openproject_get_wiki_page"]).toBeDefined();
+    expect(registeredTools["openproject_search_wiki_pages"]).toBeDefined();
+    expect(registeredTools["openproject_list_wiki_page_links"]).toBeDefined();
   });
 });
 
