@@ -51,6 +51,19 @@ import {
   metadataTools,
   registerMetadataTools,
 } from "../src/tools/metadata";
+import {
+  listMeetingsShape,
+  handleListMeetings,
+  getMeetingShape,
+  handleGetMeeting,
+  searchMeetingsShape,
+  handleSearchMeetings,
+  listMeetingsTool,
+  getMeetingTool,
+  searchMeetingsTool,
+  meetingsTools,
+  registerMeetingsTools,
+} from "../src/tools/meetings";
 import { OpenProjectNotFoundError } from "../src/client/errors";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -1051,6 +1064,268 @@ describe("Metadata Tools", () => {
     expect(registeredTools["openproject_list_statuses"]).toBeDefined();
     expect(registeredTools["openproject_list_priorities"]).toBeDefined();
     expect(registeredTools["openproject_list_users"]).toBeDefined();
+  });
+});
+
+describe("Meeting Tools", () => {
+  const dummyClient = {
+    get: async (path: string) => {
+      if (path === "/api/v3/meetings/1" || path === "meetings/1") {
+        return {
+          id: 1,
+          title: "Sprint Planning",
+          state: "open",
+          startTime: "2026-09-10T10:00:00Z",
+          endTime: "2026-09-10T11:00:00Z",
+          duration: "PT1H",
+          location: "Room A",
+          template: false,
+          notify: true,
+          _links: {
+            self: { href: "/api/v3/meetings/1" },
+            project: { href: "/api/v3/projects/4", title: "MCP Test Project" },
+            author: { href: "/api/v3/users/1", title: "Admin" },
+            participants: [{ href: "/api/v3/users/1", title: "Admin" }],
+          },
+        };
+      }
+      if (
+        path === "/api/v3/meetings/1/agenda_items" ||
+        path === "meetings/1/agenda_items"
+      ) {
+        return {
+          _embedded: {
+            elements: [
+              {
+                id: 10,
+                title: "Review backlog",
+                durationInMinutes: 30,
+                position: 1,
+                itemType: "agenda_item",
+                notes: { raw: "Discuss upcoming roadmap items" },
+                _links: {
+                  self: { href: "/api/v3/meetings/agenda_items/10" },
+                },
+              },
+            ],
+          },
+          total: 1,
+          count: 1,
+        };
+      }
+      if (path.startsWith("/api/v3/meetings") || path.startsWith("meetings")) {
+        return {
+          _embedded: {
+            elements: [
+              {
+                id: 1,
+                title: "Sprint Planning",
+                state: "open",
+                startTime: "2026-09-10T10:00:00Z",
+                endTime: "2026-09-10T11:00:00Z",
+                duration: "PT1H",
+                location: "Room A",
+                _links: {
+                  self: { href: "/api/v3/meetings/1" },
+                  project: { href: "/api/v3/projects/4", title: "MCP Test Project" },
+                  author: { href: "/api/v3/users/1", title: "Admin" },
+                },
+              },
+            ],
+          },
+          total: 1,
+          count: 1,
+          pageSize: 20,
+          offset: 1,
+        };
+      }
+      throw new Error(`Unexpected path: ${path}`);
+    },
+  } as unknown as OpenProjectClient;
+
+  test("meetingsTools array contains 3 tools and all are readOnly: true", () => {
+    expect(meetingsTools).toHaveLength(3);
+    expect(meetingsTools.map((t) => t.name)).toEqual([
+      "openproject_list_meetings",
+      "openproject_get_meeting",
+      "openproject_search_meetings",
+    ]);
+    for (const tool of meetingsTools) {
+      expect(tool.readOnly).toBe(true);
+    }
+  });
+
+  test("meetings tools have correct metadata and descriptions", () => {
+    expect(listMeetingsTool.name).toBe("openproject_list_meetings");
+    expect(listMeetingsTool.description).toBe(
+      "List and filter meetings visible to the user."
+    );
+    expect(listMeetingsTool.readOnly).toBe(true);
+
+    expect(getMeetingTool.name).toBe("openproject_get_meeting");
+    expect(getMeetingTool.description).toBe(
+      "Retrieve detailed meeting information including agenda items, sections, notes, and participants."
+    );
+    expect(getMeetingTool.readOnly).toBe(true);
+
+    expect(searchMeetingsTool.name).toBe("openproject_search_meetings");
+    expect(searchMeetingsTool.description).toBe(
+      "Search across meetings and agenda items by keywords."
+    );
+    expect(searchMeetingsTool.readOnly).toBe(true);
+  });
+
+  test("listMeetings parses parameters and defaults correctly", async () => {
+    const schema = z.object(listMeetingsShape);
+    const parsedDefault = schema.parse({});
+    expect(parsedDefault.offset).toBe(1);
+    expect(parsedDefault.pageSize).toBe(20);
+
+    const parsedCustom = schema.parse({
+      projectId: "mcp-test-project",
+      time: "upcoming",
+      offset: 2,
+      pageSize: 10,
+    });
+    expect(parsedCustom.projectId).toBe("mcp-test-project");
+    expect(parsedCustom.time).toBe("upcoming");
+    expect(parsedCustom.offset).toBe(2);
+    expect(parsedCustom.pageSize).toBe(10);
+
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleListMeetings(parsedDefault)
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.elements).toHaveLength(1);
+    expect(result.elements[0].id).toBe(1);
+    expect(result.elements[0].title).toBe("Sprint Planning");
+  });
+
+  test("listMeetings rejects invalid schema arguments", () => {
+    const schema = z.object(listMeetingsShape);
+    expect(() => schema.parse({ pageSize: 0 })).toThrow();
+    expect(() => schema.parse({ pageSize: -1 })).toThrow();
+    expect(() => schema.parse({ pageSize: 200 })).toThrow();
+    expect(() => schema.parse({ offset: 0 })).toThrow();
+    expect(() => schema.parse({ offset: -1 })).toThrow();
+    expect(() => schema.parse({ projectId: "" })).toThrow();
+    expect(() => schema.parse({ projectId: -1 })).toThrow();
+  });
+
+  test("handleListMeetings catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Meetings service failure");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleListMeetings({ offset: 1, pageSize: 20 })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Meetings service failure");
+  });
+
+  test("getMeeting parses parameters and defaults includeAgendaItems to true", async () => {
+    const schema = z.object(getMeetingShape);
+    const parsed = schema.parse({ id: 1 });
+    expect(parsed.id).toBe(1);
+    expect(parsed.includeAgendaItems).toBe(true);
+
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleGetMeeting(parsed)
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.id).toBe(1);
+    expect(result.title).toBe("Sprint Planning");
+    expect(result.agendaItems).toHaveLength(1);
+    expect(result.agendaItems[0].title).toBe("Review backlog");
+  });
+
+  test("getMeeting rejects invalid schema arguments", () => {
+    const schema = z.object(getMeetingShape);
+    expect(() => schema.parse({})).toThrow();
+    expect(() => schema.parse({ id: 0 })).toThrow();
+    expect(() => schema.parse({ id: -1 })).toThrow();
+    expect(() => schema.parse({ id: 1.5 })).toThrow();
+  });
+
+  test("handleGetMeeting catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Meeting not found");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleGetMeeting({ id: 999 })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Meeting not found");
+  });
+
+  test("searchMeetings parses parameters and finds matched meetings", async () => {
+    const schema = z.object(searchMeetingsShape);
+    const parsed = schema.parse({ query: "roadmap" });
+    expect(parsed.query).toBe("roadmap");
+    expect(parsed.offset).toBe(1);
+    expect(parsed.pageSize).toBe(20);
+
+    const response = await runWithContext(
+      { client: dummyClient, isReadOnly: false },
+      () => handleSearchMeetings(parsed)
+    );
+    expect(response.isError).toBeUndefined();
+    const result = JSON.parse(response.content[0]?.text ?? "{}");
+    expect(result.elements).toBeDefined();
+    expect(result.elements.length).toBeGreaterThan(0);
+    expect(result.elements[0].meeting.title).toBe("Sprint Planning");
+    expect(result.elements[0].matchType).toBe("agenda_item");
+  });
+
+  test("searchMeetings rejects invalid schema arguments", () => {
+    const schema = z.object(searchMeetingsShape);
+    expect(() => schema.parse({})).toThrow();
+    expect(() => schema.parse({ query: "" })).toThrow();
+    expect(() => schema.parse({ query: "test", pageSize: 0 })).toThrow();
+    expect(() => schema.parse({ query: "test", pageSize: 500 })).toThrow();
+    expect(() => schema.parse({ query: "test", offset: 0 })).toThrow();
+  });
+
+  test("handleSearchMeetings catches errors and returns error response", async () => {
+    const failingClient = {
+      get: async () => {
+        throw new Error("Search service failure");
+      },
+    } as unknown as OpenProjectClient;
+
+    const response = await runWithContext(
+      { client: failingClient, isReadOnly: false },
+      () => handleSearchMeetings({ query: "fail" })
+    );
+    expect(response.isError).toBe(true);
+    expect(response.content[0]?.text).toContain("Search service failure");
+  });
+
+  test("registerMeetingsTools registers all 3 meeting tools on McpServer", () => {
+    const server = new McpServer({ name: "test-mcp", version: "1.0.0" });
+    registerMeetingsTools(server);
+
+    const registeredTools = (
+      server as unknown as {
+        _registeredTools: Record<string, unknown>;
+      }
+    )._registeredTools;
+
+    expect(registeredTools["openproject_list_meetings"]).toBeDefined();
+    expect(registeredTools["openproject_get_meeting"]).toBeDefined();
+    expect(registeredTools["openproject_search_meetings"]).toBeDefined();
   });
 });
 
