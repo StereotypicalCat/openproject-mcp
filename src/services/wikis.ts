@@ -3,7 +3,10 @@
  * Provides functions to inspect, search, and list OpenProject wiki pages and wiki page links.
  */
 
-import type { OpenProjectClient } from "../client/api-client.ts";
+import {
+  OpenProjectAuthenticationError,
+  type OpenProjectClient,
+} from "../client/api-client.ts";
 import { extractIdFromHref } from "../client/hal-parser.ts";
 import type { HalCollection, HalLink, HalResource } from "../client/types.ts";
 import { resolveClient, resolveProjectId } from "./helper.ts";
@@ -261,6 +264,10 @@ export async function searchWikiPages(
   let cacheMap = wikiPagesCache.get(cacheKey);
   const needsDiscovery = !cacheMap || !discoveredBaseUrls.has(cacheKey) || params?.refreshCache;
 
+  if (params?.refreshCache && cacheMap) {
+    cacheMap.clear();
+  }
+
   if (!cacheMap) {
     cacheMap = new Map<number, WikiPageDetail>();
     wikiPagesCache.set(cacheKey, cacheMap);
@@ -288,8 +295,16 @@ export async function searchWikiPages(
           }
         }
       }
-    } catch {
-      // Ignore errors if wiki_page_links is not supported or accessible
+    } catch (err: unknown) {
+      if (
+        err instanceof OpenProjectAuthenticationError ||
+        (err as { statusCode?: number })?.statusCode === 401 ||
+        (err as { statusCode?: number })?.statusCode === 403 ||
+        (err as { statusCode?: number })?.statusCode === 429
+      ) {
+        throw err;
+      }
+      // Ignore errors if wiki_page_links is not supported or accessible (e.g. 404)
     }
 
     // 2. Sequential probing of IDs 1..MAX_PROBE_ID with consecutive 404 cutoff
@@ -302,8 +317,18 @@ export async function searchWikiPages(
         const pageDetail = await getWikiPage(id, opClient);
         cacheMap.set(id, pageDetail);
         consecutiveMisses = 0;
-      } catch {
-        consecutiveMisses++;
+      } catch (err: unknown) {
+        if (
+          err instanceof OpenProjectAuthenticationError ||
+          (err as { statusCode?: number })?.statusCode === 401 ||
+          (err as { statusCode?: number })?.statusCode === 403 ||
+          (err as { statusCode?: number })?.statusCode === 429
+        ) {
+          throw err;
+        }
+        if ((err as { statusCode?: number })?.statusCode === 404) {
+          consecutiveMisses++;
+        }
         if (consecutiveMisses >= CONSECUTIVE_404_CUTOFF) {
           break;
         }
@@ -316,7 +341,15 @@ export async function searchWikiPages(
         try {
           const pageDetail = await getWikiPage(id, opClient);
           cacheMap.set(id, pageDetail);
-        } catch {
+        } catch (err: unknown) {
+          if (
+            err instanceof OpenProjectAuthenticationError ||
+            (err as { statusCode?: number })?.statusCode === 401 ||
+            (err as { statusCode?: number })?.statusCode === 403 ||
+            (err as { statusCode?: number })?.statusCode === 429
+          ) {
+            throw err;
+          }
           // Ignore missing pages
         }
       }

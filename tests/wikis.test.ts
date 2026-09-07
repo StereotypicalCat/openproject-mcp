@@ -1,5 +1,8 @@
 import { describe, expect, test, beforeEach } from "bun:test";
-import { OpenProjectClient } from "../src/client/api-client.ts";
+import {
+  OpenProjectAuthenticationError,
+  OpenProjectClient,
+} from "../src/client/api-client.ts";
 import { runWithContext, type RequestContext } from "../src/context.ts";
 import {
   clearWikiCache,
@@ -381,5 +384,98 @@ describe("Wikis Service", () => {
       expect(searchRes).toHaveLength(1);
       expect(searchRes[0]!.title).toBe("Context Wiki");
     });
+  });
+
+  test("searchWikiPages re-throws 401 authentication errors during discovery instead of swallowing", async () => {
+    const mockClient = {
+      baseUrl: "http://localhost:8080",
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/wiki_page_links")) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        const err = new OpenProjectAuthenticationError("Invalid API key provided");
+        throw err;
+      },
+    } as unknown as OpenProjectClient;
+
+    expect(searchWikiPages({}, mockClient)).rejects.toThrow("Invalid API key provided");
+  });
+
+  test("searchWikiPages re-throws 403 and 429 errors during discovery probe", async () => {
+    const mockForbiddenClient = {
+      baseUrl: "http://localhost:8080",
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/wiki_page_links")) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        const err = new Error("Access denied");
+        (err as unknown as { statusCode: number }).statusCode = 403;
+        throw err;
+      },
+    } as unknown as OpenProjectClient;
+
+    expect(searchWikiPages({}, mockForbiddenClient)).rejects.toThrow("Access denied");
+
+    const mockRateLimitClient = {
+      baseUrl: "http://localhost:8080",
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/wiki_page_links")) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        const err = new Error("Too many requests");
+        (err as unknown as { statusCode: number }).statusCode = 429;
+        throw err;
+      },
+    } as unknown as OpenProjectClient;
+
+    expect(searchWikiPages({}, mockRateLimitClient)).rejects.toThrow("Too many requests");
+  });
+
+  test("searchWikiPages with refreshCache evicts stale deleted pages from cache", async () => {
+    let page2Exists = true;
+    const mockClient = {
+      baseUrl: "http://localhost:8080",
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/wiki_page_links")) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        if (path === "/api/v3/wiki_pages/1") {
+          return {
+            _type: "WikiPage",
+            id: 1,
+            title: "First Page",
+            _links: { project: { href: "/api/v3/projects/1", title: "Demo" } },
+          };
+        }
+        if (path === "/api/v3/wiki_pages/1/attachments") {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        if (path === "/api/v3/wiki_pages/2" && page2Exists) {
+          return {
+            _type: "WikiPage",
+            id: 2,
+            title: "Second Page",
+            _links: { project: { href: "/api/v3/projects/1", title: "Demo" } },
+          };
+        }
+        if (path === "/api/v3/wiki_pages/2/attachments" && page2Exists) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        const err = new Error("Not found");
+        (err as unknown as { statusCode: number }).statusCode = 404;
+        throw err;
+      },
+    } as unknown as OpenProjectClient;
+
+    const initialResults = await searchWikiPages({}, mockClient);
+    expect(initialResults).toHaveLength(2);
+
+    // Page 2 is subsequently deleted on OpenProject
+    page2Exists = false;
+
+    // Refreshing cache should clear stale page 2 from memory
+    const refreshedResults = await searchWikiPages({ refreshCache: true }, mockClient);
+    expect(refreshedResults).toHaveLength(1);
+    expect(refreshedResults[0]!.id).toBe(1);
   });
 });
