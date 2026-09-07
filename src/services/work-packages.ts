@@ -91,3 +91,84 @@ export async function searchWorkPackages(
     client
   );
 }
+
+export interface ActivityDetail {
+  format: string;
+  raw: string;
+  html?: string;
+}
+
+export interface WorkPackageActivity {
+  id: number;
+  version: number;
+  createdAt: string;
+  user?: { id: number; name: string };
+  comment?: string;
+  details: ActivityDetail[];
+  isComment: boolean;
+}
+
+export interface ListWorkPackageActivitiesOptions {
+  workPackageId: number;
+  onlyComments?: boolean;
+}
+
+/**
+ * Lists activities (field changes, comments, status updates) for a specific work package.
+ */
+export async function listWorkPackageActivities(
+  options: ListWorkPackageActivitiesOptions,
+  client?: OpenProjectClient
+): Promise<WorkPackageActivity[]> {
+  const opClient = resolveClient(client);
+  const response = await opClient.get<Record<string, unknown>>(
+    `/api/v3/work_packages/${options.workPackageId}/activities`
+  );
+
+  const elements = (response._embedded as { elements?: unknown[] })?.elements ?? [];
+  const activities: WorkPackageActivity[] = [];
+
+  for (const item of elements) {
+    const rawItem = item as Record<string, unknown>;
+    const commentObj = rawItem.comment as { raw?: string } | undefined;
+    const commentRaw = typeof commentObj?.raw === "string" ? commentObj.raw.trim() : "";
+    const isComment = commentRaw.length > 0;
+
+    if (options.onlyComments && !isComment) {
+      continue;
+    }
+
+    const links = (rawItem._links as Record<string, { href?: string; title?: string }>) ?? {};
+    const userLink = links.user;
+    let user: { id: number; name: string } | undefined;
+    if (userLink?.href) {
+      const match = userLink.href.match(/\/users\/(\d+)/);
+      if (match) {
+        user = {
+          id: Number(match[1]),
+          name: userLink.title ?? `User #${match[1]}`
+        };
+      }
+    }
+
+    const rawDetails = (rawItem.details as Array<{ format?: string; raw?: string; html?: string }>) ?? [];
+    const details: ActivityDetail[] = rawDetails.map((d) => ({
+      format: d.format ?? "custom",
+      raw: d.raw ?? "",
+      html: d.html,
+    }));
+
+    activities.push({
+      id: Number(rawItem.id),
+      version: Number(rawItem.version ?? 1),
+      createdAt: String(rawItem.createdAt ?? ""),
+      user,
+      comment: commentRaw || undefined,
+      details,
+      isComment,
+    });
+  }
+
+  return activities;
+}
+
