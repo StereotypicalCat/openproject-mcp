@@ -28,7 +28,8 @@ widens the set of content that is actually searched.
 | --- | --- | --- |
 | `openproject_search_meetings` | Exact substring over title, location, agenda item title/notes, outcome notes | `src/services/meetings.ts:369` |
 | `openproject_search_wiki_pages` | Exact substring over **title only** | `src/services/wikis.ts:257` |
-| `openproject_search_work_packages` | Server-side OpenProject `~` filter on **subject only** | `src/client/filter-builder.ts:86` |
+| `openproject_list_work_packages` (`subject` arg) | Server-side OpenProject `~` filter on **subject only** | `src/client/filter-builder.ts:86` |
+| `searchWorkPackages` service helper | Same; **not reachable from any MCP tool** — called only by tests | `src/services/work-packages.ts:79` |
 | `openproject_list_work_package_activities` | No search capability | `src/services/work-packages.ts:119` |
 
 ---
@@ -324,8 +325,21 @@ export type WikiPageSearchResult = WikiPageSummary & {
 
 ### 3.3 Work Packages (`src/services/work-packages.ts`)
 
-A naive change here would trade a cheap server-side filter for an expensive
-client-side scan. Instead, **union strategy** — two requests issued in parallel:
+**A new tool is required.** There is no `openproject_search_work_packages` tool
+today: `searchWorkPackages` is a service helper that only the test suite calls,
+and `openproject_list_work_packages` invokes `listWorkPackages` directly. Fuzzy
+work package search would therefore be unreachable by any LLM. This change
+registers `openproject_search_work_packages` as a new read-only tool, taking the
+MCP tool count from 18 to 19.
+
+`openproject_list_work_packages` keeps its current server-side `subject ~`
+behaviour unchanged. Splitting list (filter, flat results) from search (rank,
+scored results) avoids making one tool's response shape depend on which
+arguments were supplied.
+
+A naive change to the search path would trade a cheap server-side filter for an
+expensive client-side scan. Instead, **union strategy** — two requests issued in
+parallel:
 
 - **Query A**: today's server-side `subject ~ query` filter. Cheap, precise,
   guarantees that every currently-returned result is still returned.
@@ -369,8 +383,12 @@ matchMode: z
 ```
 
 Affected shapes: `searchMeetingsShape`, `searchWikiPagesShape`,
-`listWorkPackagesShape` (subject search path), `listWorkPackageActivitiesShape`
-(alongside a new optional `query`).
+`listWorkPackageActivitiesShape` (alongside a new optional `query`), and a new
+`searchWorkPackagesShape` backing the new `openproject_search_work_packages`
+tool.
+
+`listWorkPackagesShape` is deliberately **not** changed: that tool stays a
+server-side filter and does not gain `matchMode`.
 
 Tool `description` strings are rewritten to advertise the capability, since the
 description is what actually steers whether and how a model calls the tool. For
