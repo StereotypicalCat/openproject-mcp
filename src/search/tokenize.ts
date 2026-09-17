@@ -38,9 +38,7 @@ export function tokenizeWithOffsets(text: string): Token[] {
     return tokens;
   }
 
-  TOKEN_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = TOKEN_PATTERN.exec(text)) !== null) {
+  for (const match of text.matchAll(TOKEN_PATTERN)) {
     const value = normalizeText(match[0]);
     if (value.length > 0) {
       tokens.push({ value, offset: match.index });
