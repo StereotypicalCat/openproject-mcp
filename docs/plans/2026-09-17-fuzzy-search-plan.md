@@ -342,13 +342,17 @@ describe("scoreToken", () => {
   });
 
   test("matches morphological variants via a shared prefix", () => {
+    // Neither token is a true prefix of the other, so these exercise the
+    // shared-prefix rule rather than being intercepted by the startsWith rule.
     expect(scoreToken("decide", "decision")).toBeGreaterThan(0.5);
-    expect(scoreToken("deploy", "deployment")).toBeGreaterThan(0.5);
+    expect(scoreToken("deployed", "deployment")).toBeGreaterThan(0.5);
   });
 
   test("does not shared-prefix-match on fewer than 4 common characters", () => {
-    expect(scoreToken("car", "carpet")).toBeLessThan(0.9);
-    expect(scoreToken("bee", "beetle")).toBeLessThan(0.9);
+    // "cars"/"carton" share only "car" (3 < MIN_SHARED_PREFIX) and neither is
+    // a true prefix of the other, so every rule falls through to zero.
+    expect(scoreToken("cars", "carton")).toBe(0);
+    expect(scoreToken("bees", "beetle")).toBe(0);
   });
 
   test("ranks a shared-prefix match below a true prefix match", () => {
