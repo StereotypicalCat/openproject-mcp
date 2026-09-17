@@ -20,7 +20,8 @@
 - **`verbatimModuleSyntax` is enabled.** Type-only imports MUST use `import type { ... }`. Mixing a type into a value import is a compile error. Values (`rankRecords`, `searchPipeline`) use a plain `import`; types (`FieldSpec`, `MatchMode`) use `import type`.
 - **Stateless services:** never store clients or tokens in module-level mutable state. `src/search/` must hold no module-level state at all.
 - **All touched tools remain `readOnly: true`.**
-- **Default constants (exact values):** `DEFAULT_MIN_SCORE = 0.35`, `DEFAULT_ENRICH_LIMIT = 25`, `DEFAULT_CONCURRENCY = 8`, `PHRASE_BONUS = 0.15`, `EDIT_PENALTY = 0.6`, snippet `maxLength = 160`, snippet `contextBefore = 40`.
+- **Default constants (exact values):** `DEFAULT_MIN_SCORE = 0.35`, `DEFAULT_ENRICH_LIMIT = 25`, `DEFAULT_CONCURRENCY = 8`, `PHRASE_BONUS = 0.15`, `BASE_SCALE = 0.85`, `EDIT_PENALTY = 0.6`, `MIN_SHARED_PREFIX = 4`, snippet `maxLength = 160`, snippet `contextBefore = 40`.
+- **Scoring invariants (do not "simplify" these away):** (a) the qualification gate compares the RAW best field score against `minScore`; the weighted score orders results but never gates them. (b) A field score reaches 1.0 only via the phrase bonus — an all-tokens match tops out at `BASE_SCALE`. (c) Query tokens are stopword-filtered only when at least one non-stopword survives.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `docs:`, `test:`, `refactor:`). Commit at the end of every task.
 - **Branch:** `feat/fuzzy-search` (already created; the spec commit is `5dc609c`).
 
@@ -73,7 +74,7 @@
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `normalizeText(text: string): string`, `tokenize(text: string): string[]`, `tokenizeWithOffsets(text: string): Token[]`, `interface Token { value: string; offset: number }`.
+- Produces: `normalizeText(text: string): string`, `tokenize(text: string): string[]`, `tokenizeWithOffsets(text: string): Token[]`, `tokenizeQuery(query: string): string[]`, `interface Token { value: string; offset: number }`.
 
 **Why offsets matter:** NFKD normalization can change string length (the `ﬁ` ligature expands to `fi`), so offsets computed on normalized text do not reliably index the original text. `tokenizeWithOffsets` therefore scans the **original** text for token boundaries and normalizes only each token's value. Offsets returned are always original-text offsets, which is what the snippet extractor needs.
 
@@ -83,7 +84,12 @@ Create `tests/search/tokenize.test.ts`:
 
 ```ts
 import { describe, expect, test } from "bun:test";
-import { normalizeText, tokenize, tokenizeWithOffsets } from "../../src/search/tokenize.ts";
+import {
+  normalizeText,
+  tokenize,
+  tokenizeQuery,
+  tokenizeWithOffsets,
+} from "../../src/search/tokenize.ts";
 
 describe("normalizeText", () => {
   test("lowercases and strips diacritics", () => {
@@ -109,6 +115,21 @@ describe("tokenize", () => {
 
   test("preserves non-latin scripts", () => {
     expect(tokenize("Привет мир")).toEqual(["привет", "мир"]);
+  });
+});
+
+describe("tokenizeQuery", () => {
+  test("strips English stopwords from a natural-language query", () => {
+    expect(tokenizeQuery("what did we decide about hiring")).toEqual(["decide", "hiring"]);
+    expect(tokenizeQuery("approval of the budget")).toEqual(["approval", "budget"]);
+  });
+
+  test("keeps stopwords when nothing else would survive", () => {
+    expect(tokenizeQuery("the who")).toEqual(["the", "who"]);
+  });
+
+  test("leaves a stopword-free query untouched", () => {
+    expect(tokenizeQuery("budget approval")).toEqual(["budget", "approval"]);
   });
 });
 
@@ -196,12 +217,42 @@ export function tokenizeWithOffsets(text: string): Token[] {
 export function tokenize(text: string): string[] {
   return tokenizeWithOffsets(text).map((token) => token.value);
 }
+
+/**
+ * English function words carrying no retrieval signal.
+ *
+ * LLM queries are phrased as questions ("what did we decide about hiring"),
+ * and the coverage multiplier in scoreField divides by the query token count.
+ * Left in, these words drive coverage — and therefore the score — toward zero
+ * for exactly the natural-language queries this feature exists to serve.
+ */
+const STOPWORDS = new Set([
+  "a", "about", "an", "and", "are", "as", "at", "be", "but", "by", "can",
+  "could", "did", "do", "does", "for", "from", "had", "has", "have", "he",
+  "her", "his", "how", "i", "if", "in", "is", "it", "its", "me", "my", "of",
+  "on", "or", "our", "she", "should", "so", "than", "that", "the", "their",
+  "them", "then", "there", "these", "they", "this", "to", "us", "was", "we",
+  "were", "what", "when", "where", "which", "who", "why", "will", "with",
+  "would", "you", "your",
+]);
+
+/**
+ * Tokenizes a QUERY, stripping stopwords.
+ *
+ * Stopwords are kept when removing them would leave nothing, so that a query
+ * such as "the who" still searches for something.
+ */
+export function tokenizeQuery(query: string): string[] {
+  const tokens = tokenize(query);
+  const meaningful = tokens.filter((token) => !STOPWORDS.has(token));
+  return meaningful.length > 0 ? meaningful : tokens;
+}
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `bun test tests/search/tokenize.test.ts`
-Expected: PASS, 7 tests.
+Expected: PASS, 10 tests.
 
 - [ ] **Step 5: Typecheck**
 
@@ -289,6 +340,20 @@ describe("scoreToken", () => {
   test("does not fuzzy-match tokens shorter than 3 characters", () => {
     expect(scoreToken("ab", "ac")).toBe(0);
   });
+
+  test("matches morphological variants via a shared prefix", () => {
+    expect(scoreToken("decide", "decision")).toBeGreaterThan(0.5);
+    expect(scoreToken("deploy", "deployment")).toBeGreaterThan(0.5);
+  });
+
+  test("does not shared-prefix-match on fewer than 4 common characters", () => {
+    expect(scoreToken("car", "carpet")).toBeLessThan(0.9);
+    expect(scoreToken("bee", "beetle")).toBeLessThan(0.9);
+  });
+
+  test("ranks a shared-prefix match below a true prefix match", () => {
+    expect(scoreToken("decide", "decision")).toBeLessThan(scoreToken("deci", "decision"));
+  });
 });
 
 describe("scoreField", () => {
@@ -329,6 +394,16 @@ describe("scoreField", () => {
     expect(scoreField([], "anything").score).toBe(0);
     expect(scoreField(tokenize("budget"), "").score).toBe(0);
   });
+
+  test("an all-tokens match without the phrase tops out below 1.0", () => {
+    const result = scoreField(tokenize("budget approval"), "approval of the budget");
+    expect(result.score).toBeCloseTo(0.85, 5);
+  });
+
+  test("only a verbatim phrase reaches 1.0", () => {
+    const result = scoreField(tokenize("budget approval"), "the budget approval doc");
+    expect(result.score).toBeCloseTo(1, 5);
+  });
 });
 ```
 
@@ -360,6 +435,19 @@ const EDIT_PENALTY = 0.6;
 
 /** Added when the full query appears verbatim in the field. */
 const PHRASE_BONUS = 0.15;
+
+/**
+ * The base score is scaled by this before the phrase bonus is added.
+ *
+ * Load-bearing: without it a document matching every query token already
+ * scores 1.0, the phrase bonus clamps to nothing, and a verbatim phrase
+ * cannot outrank a scattered one — the bonus becomes dead code in exactly
+ * the case it exists for. Scaling reserves the top 0.15 for verbatim hits.
+ */
+const BASE_SCALE = 0.85;
+
+/** Minimum shared prefix length for the morphological-variant rule. */
+const MIN_SHARED_PREFIX = 4;
 
 /** Below this length a token only ever matches exactly. */
 const MIN_FUZZY_TOKEN_LENGTH = 3;
@@ -422,6 +510,18 @@ export function boundedLevenshtein(a: string, b: string, max: number): number {
 }
 
 /**
+ * Length of the common prefix shared by two tokens.
+ */
+function sharedPrefixLength(a: string, b: string): number {
+  const limit = Math.min(a.length, b.length);
+  let index = 0;
+  while (index < limit && a.charCodeAt(index) === b.charCodeAt(index)) {
+    index++;
+  }
+  return index;
+}
+
+/**
  * Scores a single query token against a single field token.
  *
  * Rules are applied in order and the first match wins. The length guards are
@@ -442,6 +542,15 @@ export function scoreToken(queryToken: string, fieldToken: string): number {
     return 0.75;
   }
 
+  // Morphological variants: "decide"/"decision", "deploy"/"deployment".
+  // These are 3-4 edits apart, and no edit budget wide enough to match them
+  // is narrow enough to reject unrelated words. A shared prefix is.
+  const sharedPrefix = sharedPrefixLength(queryToken, fieldToken);
+  if (sharedPrefix >= MIN_SHARED_PREFIX) {
+    const longest = Math.max(queryToken.length, fieldToken.length);
+    return 0.55 + 0.25 * (sharedPrefix / longest);
+  }
+
   const maxDistance = queryToken.length < 6 ? 1 : 2;
   const distance = boundedLevenshtein(queryToken, fieldToken, maxDistance);
   if (distance > maxDistance) {
@@ -454,10 +563,12 @@ export function scoreToken(queryToken: string, fieldToken: string): number {
 /**
  * Scores a set of query tokens against one field's text.
  *
- * Aggregation is mean(best score per query token) * coverage, where coverage
- * is the fraction of query tokens that matched anything. Coverage is what
- * stops a two-word query from ranking a document that matched only the
- * common word.
+ * Aggregation is mean(best score per query token) * coverage * BASE_SCALE,
+ * plus PHRASE_BONUS when the full query appears verbatim. Coverage is the
+ * fraction of query tokens that matched anything, and is what stops a
+ * two-word query from ranking a document that matched only the common word.
+ *
+ * A field score reaches 1.0 only via the phrase bonus.
  */
 export function scoreField(queryTokens: string[], fieldText: string): FieldScore {
   const empty: FieldScore = { score: 0, matchedOffsets: [] };
@@ -504,7 +615,7 @@ export function scoreField(queryTokens: string[], fieldText: string): FieldScore
   }
 
   const coverage = matchedCount / queryTokens.length;
-  let score = (total / queryTokens.length) * coverage;
+  let score = (total / queryTokens.length) * coverage * BASE_SCALE;
 
   // Phrase bonus, compared over joined token values so that punctuation
   // between words does not defeat the check.
@@ -524,7 +635,7 @@ export function scoreField(queryTokens: string[], fieldText: string): FieldScore
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `bun test tests/search/score.test.ts`
-Expected: PASS, 17 tests.
+Expected: PASS, 22 tests.
 
 - [ ] **Step 5: Typecheck**
 
@@ -704,7 +815,14 @@ git commit -m "feat(search): add match-centred snippet extraction"
   - `rankRecords<T>(records: T[], query: string, fields: FieldSpec<T>[], opts?: RankOptions<T>): Ranked<T>[]`
   - `const DEFAULT_MIN_SCORE = 0.35`
 
-**Critical detail — the exact-mode threshold.** In exact mode a containment hit scores 1, but the record score is weighted: a hit on a weight-0.5 field where the max weight is 3.0 yields `1 * 0.5 / 3.0 = 0.167`, which is *below* `DEFAULT_MIN_SCORE` and would be silently dropped. Exact mode must therefore use a threshold of "greater than zero", not `minScore`. Getting this wrong breaks backward compatibility in a way the regression suite in Task 6 will catch.
+**Critical detail — gate on the RAW score, order by the weighted score.** These are two different questions and must not share a number:
+
+- *Is this a real match?* — answered by the raw field score against `minScore`.
+- *How should matches be ordered?* — answered by the weighted score.
+
+Gating on the weighted score instead makes any field weighted below `minScore * maxWeight` unreachable: a body field at weight 1.0 against a title at 3.0 tops out at `1.0 * 1/3 = 0.333`, below `DEFAULT_MIN_SCORE` of 0.35, so **no body-only match could ever be returned**. That would silently disable wiki-body search, work-package description search, and comment search — the entire content-coverage half of this feature — while every unit test on titles still passed.
+
+Exact mode additionally uses a "greater than zero" threshold rather than `minScore`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -807,7 +925,22 @@ describe("rankRecords", () => {
 
   test("a query under three characters falls back to substring containment", () => {
     const results = rankRecords(DOCS, "bu", FIELDS);
-    expect(results.every((r) => r.record.title.toLowerCase().includes("bu") || (r.record.body ?? "").toLowerCase().includes("bu"))).toBe(true);
+    expect(results.length).toBeGreaterThan(0);
+    expect(
+      results.every((r) => {
+        const haystack = [r.record.title, r.record.body ?? "", ...(r.record.tags ?? [])]
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes("bu");
+      })
+    ).toBe(true);
+  });
+
+  test("a body-only match is returned despite its low field weight", () => {
+    const bodyOnly: Doc[] = [{ id: 1, title: "Unrelated", body: "the hiring freeze was agreed" }];
+    const results = rankRecords(bodyOnly, "hiring freeze", FIELDS);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.matches[0]!.field).toBe("body");
   });
 });
 ```
@@ -829,7 +962,7 @@ Create `src/search/rank.ts`:
  * decides HOW WELL each record matches.
  */
 
-import { normalizeText, tokenize } from "./tokenize.ts";
+import { normalizeText, tokenizeQuery } from "./tokenize.ts";
 import { scoreField, type FieldScore } from "./score.ts";
 import { extractSnippet } from "./snippet.ts";
 
@@ -909,6 +1042,9 @@ function scoreExact(query: string, text: string): FieldScore {
  * Normalizing by the maximum DECLARED weight (not the best matching weight)
  * means a hit on a low-weight field yields a proportionally lower record
  * score rather than being rescaled up to 1.
+ *
+ * The minScore gate is applied to the RAW field score, never to this
+ * weighted value.
  */
 export function rankRecords<T>(
   records: T[],
@@ -925,7 +1061,7 @@ export function rankRecords<T>(
     return records.map((record) => ({ record, score: 0, matches: [] }));
   }
 
-  const queryTokens = tokenize(trimmedQuery);
+  const queryTokens = tokenizeQuery(trimmedQuery);
   const useExact =
     matchMode === "exact" ||
     trimmedQuery.length < MIN_FUZZY_QUERY_LENGTH ||
@@ -943,6 +1079,7 @@ export function rankRecords<T>(
   for (const record of records) {
     const matches: FieldMatch[] = [];
     let bestWeighted = 0;
+    let bestRaw = 0;
 
     for (const spec of fields) {
       let bestScore: FieldScore = { score: 0, matchedOffsets: [] };
@@ -963,6 +1100,10 @@ export function rankRecords<T>(
           snippet: extractSnippet(bestText, bestScore.matchedOffsets) || undefined,
         });
 
+        if (bestScore.score > bestRaw) {
+          bestRaw = bestScore.score;
+        }
+
         const weighted = (bestScore.score * spec.weight) / maxWeight;
         if (weighted > bestWeighted) {
           bestWeighted = weighted;
@@ -970,7 +1111,11 @@ export function rankRecords<T>(
       }
     }
 
-    if (bestWeighted >= threshold) {
+    // Gate on the RAW score (is this a real match?), order by the weighted
+    // score (how important is where it matched?). Gating on the weighted
+    // score would make every low-weight field unreachable — see the note in
+    // the plan for this task.
+    if (bestRaw >= threshold) {
       matches.sort((a, b) => b.score - a.score);
       ranked.push({ record, score: Number(bestWeighted.toFixed(2)), matches });
     }
@@ -985,7 +1130,7 @@ export function rankRecords<T>(
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `bun test tests/search/rank.test.ts`
-Expected: PASS, 13 tests.
+Expected: PASS, 14 tests.
 
 - [ ] **Step 5: Typecheck**
 
@@ -2896,7 +3041,7 @@ const CASES: Array<{ query: string; expectedId: number; why: string }> = [
   { query: "design team", expectedId: 3, why: "title and body overlap" },
   { query: "tls certificate expired", expectedId: 4, why: "reordered body tokens" },
   { query: "certificat", expectedId: 4, why: "truncated word" },
-  { query: "muller", expectedId: 1, why: "diacritic-insensitive person match, best title weight" },
+  { query: "muller", expectedId: 1, why: "diacritic-insensitive person match; ties with doc 5 and wins on the id tie-break" },
   { query: "payment terms", expectedId: 5, why: "body phrase" },
 ];
 
