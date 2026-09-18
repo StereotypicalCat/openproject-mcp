@@ -2878,8 +2878,12 @@ describe("Activity Ranking", () => {
   });
 
   test("exact mode finds nothing for a typo", async () => {
+    // "certificatee" is an INSERTION typo: by construction it cannot be a
+    // substring of the shorter "certificate" in the fixture. A truncation
+    // typo like "certificat" would not work here — exact mode is substring
+    // containment, so a truncation still matches and the test could never pass.
     const result = await listWorkPackageActivities(
-      { workPackageId: 1, query: "certificat", matchMode: "exact" },
+      { workPackageId: 1, query: "certificatee", matchMode: "exact" },
       activitiesClient()
     );
     expect(result).toHaveLength(0);
