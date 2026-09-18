@@ -1464,7 +1464,8 @@ describe("Wikis Tools", () => {
 
     expect(searchWikiPagesTool.name).toBe("openproject_search_wiki_pages");
     expect(searchWikiPagesTool.description).toBe(
-      "Discover and search wiki pages matching keywords or project."
+      "Search wiki pages by title and page content. Accepts natural-language " +
+        "phrasing and tolerates typos. Returns results ranked by relevance."
     );
     expect(searchWikiPagesTool.readOnly).toBe(true);
 

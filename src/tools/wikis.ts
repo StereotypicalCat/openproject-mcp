@@ -46,7 +46,10 @@ export const searchWikiPagesShape = {
   query: z
     .string()
     .optional()
-    .describe("Substring keyword to match in wiki page title"),
+    .describe(
+      "Search keywords matched against wiki page titles and page body text. " +
+        "Natural-language phrasing works."
+    ),
   projectId: z
     .union([z.number().int().positive(), z.string().min(1)])
     .optional()
@@ -64,6 +67,14 @@ export const searchWikiPagesShape = {
     .optional()
     .default(false)
     .describe("Force cache refresh"),
+  matchMode: z
+    .enum(["fuzzy", "exact"])
+    .optional()
+    .default("fuzzy")
+    .describe(
+      "Matching strategy. 'fuzzy' (default) tolerates typos, word reordering, and " +
+        "partial words. Use 'exact' only for literal strings you know verbatim."
+    ),
 };
 
 export type SearchWikiPagesArgs = z.input<z.ZodObject<typeof searchWikiPagesShape>>;
@@ -140,7 +151,9 @@ export const searchWikiPagesTool: ToolDefinition<
   SearchWikiPagesArgs
 > = {
   name: "openproject_search_wiki_pages",
-  description: "Discover and search wiki pages matching keywords or project.",
+  description:
+    "Search wiki pages by title and page content. Accepts natural-language " +
+    "phrasing and tolerates typos. Returns results ranked by relevance.",
   parameters: searchWikiPagesShape,
   readOnly: true,
   execute: handleSearchWikiPages,

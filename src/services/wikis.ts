@@ -7,9 +7,10 @@ import {
   OpenProjectAuthenticationError,
   type OpenProjectClient,
 } from "../client/api-client.ts";
-import { extractIdFromHref } from "../client/hal-parser.ts";
+import { extractIdFromHref, extractRawText } from "../client/hal-parser.ts";
 import type { HalCollection, HalLink, HalResource } from "../client/types.ts";
 import { resolveClient, resolveProjectId } from "./helper.ts";
+import { rankRecords, type FieldSpec, type MatchMode } from "../search/rank.ts";
 
 export interface WikiPageAttachment {
   id: number;
@@ -22,6 +23,8 @@ export interface WikiPageAttachment {
 export interface WikiPageDetail {
   id: number;
   title: string;
+  /** Raw markdown body from the formattable `text` field. */
+  text?: string;
   project: { id: number; identifier?: string; name?: string };
   attachments: WikiPageAttachment[];
 }
@@ -61,7 +64,15 @@ export interface SearchWikiPagesParams {
   projectId?: string | number;
   limit?: number;
   refreshCache?: boolean;
+  matchMode?: MatchMode;
 }
+
+export type WikiPageSearchResult = WikiPageSummary & {
+  /** Relevance score in the range 0..1. */
+  score: number;
+  snippet?: string;
+  matchedFields: string[];
+};
 
 // In-memory cache for discovered wiki pages keyed by client cache key
 const wikiPagesCache = new Map<string, Map<number, WikiPageDetail>>();
@@ -119,10 +130,12 @@ export function normalizeWikiPageDetail(
 
   const id = resource.id ?? extractIdFromHref(links.self?.href) ?? 0;
   const title = String(resource.title ?? "");
+  const text = extractRawText(resource.text);
 
   return {
     id,
     title,
+    ...(text ? { text } : {}),
     project,
     attachments,
   };
@@ -257,7 +270,7 @@ export async function listWikiPageLinks(
 export async function searchWikiPages(
   params?: SearchWikiPagesParams,
   client?: OpenProjectClient
-): Promise<WikiPageSummary[]> {
+): Promise<WikiPageSearchResult[]> {
   const opClient = resolveClient(client);
   const cacheKey = opClient.getCacheKey?.() ?? (opClient.baseUrl || "default");
 
@@ -364,24 +377,39 @@ export async function searchWikiPages(
     targetProjectId = await resolveProjectId(params.projectId, opClient);
   }
 
-  // 4. Filter cached pages
-  const allPages = Array.from(cacheMap.values());
-  const querySubstring = params?.query?.trim().toLowerCase();
+  // 4. Scope cached pages to the target project
+  const allPages = Array.from(cacheMap.values()).filter(
+    (page) => targetProjectId === undefined || page.project.id === targetProjectId
+  );
 
-  let filtered = allPages.filter((page) => {
-    if (targetProjectId !== undefined && page.project.id !== targetProjectId) {
-      return false;
-    }
-    if (querySubstring && !page.title.toLowerCase().includes(querySubstring)) {
-      return false;
-    }
-    return true;
-  });
-
-  // 5. Apply limit
-  if (params?.limit !== undefined && params.limit > 0) {
-    filtered = filtered.slice(0, params.limit);
+  // 5. Rank by relevance
+  const query = params?.query?.trim() ?? "";
+  if (query.length === 0) {
+    const limited =
+      params?.limit !== undefined && params.limit > 0
+        ? allPages.slice(0, params.limit)
+        : allPages;
+    return limited.map((page) => ({
+      ...toWikiPageSummary(page),
+      score: 0,
+      matchedFields: [],
+    }));
   }
 
-  return filtered.map(toWikiPageSummary);
+  const fields: FieldSpec<WikiPageDetail>[] = [
+    { name: "title", weight: 3, extract: (page) => page.title },
+    { name: "text", weight: 1, extract: (page) => page.text },
+  ];
+
+  const ranked = rankRecords(allPages, query, fields, {
+    matchMode: params?.matchMode ?? "fuzzy",
+    limit: params?.limit,
+  });
+
+  return ranked.map((entry) => ({
+    ...toWikiPageSummary(entry.record),
+    score: entry.score,
+    snippet: entry.matches[0]?.snippet,
+    matchedFields: entry.matches.map((match) => match.field),
+  }));
 }

@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach } from "bun:test";
 import {
   OpenProjectAuthenticationError,
   OpenProjectClient,
+  OpenProjectError,
 } from "../src/client/api-client.ts";
 import { runWithContext, type RequestContext } from "../src/context.ts";
 import {
@@ -654,5 +655,77 @@ describe("Wikis Service", () => {
     const searchResultsB = await searchWikiPages({}, clientB);
     expect(searchResultsB).toHaveLength(1);
     expect(searchResultsB[0]!.title).toBe("Tenant B Page");
+  });
+});
+
+describe("Wiki Fuzzy Search", () => {
+  function wikiFixtureClient() {
+    const pages: Record<string, unknown> = {
+      "/api/v3/wiki_pages/1": {
+        _type: "WikiPage",
+        id: 1,
+        title: "Onboarding Guide",
+        text: { raw: "New engineers should request VPN access on their first day." },
+        _links: { project: { href: "/api/v3/projects/1", title: "Demo project" } },
+      },
+      "/api/v3/wiki_pages/2": {
+        _type: "WikiPage",
+        id: 2,
+        title: "Deployment Runbook",
+        text: { raw: "Roll back with the previous image tag if smoke tests fail." },
+        _links: { project: { href: "/api/v3/projects/1", title: "Demo project" } },
+      },
+    };
+
+    return {
+      getCacheKey: () => `test-${Math.random()}`,
+      baseUrl: "http://localhost",
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/wiki_page_links")) {
+          return { _type: "Collection", _embedded: { elements: [] } };
+        }
+        if (path.endsWith("/attachments")) {
+          return { _type: "Collection", _embedded: { elements: [] } };
+        }
+        if (pages[path]) {
+          return pages[path];
+        }
+        throw new OpenProjectError("not found", { statusCode: 404 });
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  test("retains page body text when normalizing", async () => {
+    const page = await getWikiPage(1, wikiFixtureClient());
+    expect(page.text).toContain("VPN access");
+  });
+
+  test("finds a page by body text, not just title", async () => {
+    const results = await searchWikiPages({ query: "vpn access" }, wikiFixtureClient());
+    expect(results[0]!.id).toBe(1);
+    expect(results[0]!.matchedFields).toContain("text");
+  });
+
+  test("ranks a title match above a body match", async () => {
+    const results = await searchWikiPages({ query: "deployment" }, wikiFixtureClient());
+    expect(results[0]!.id).toBe(2);
+  });
+
+  test("tolerates a typo in the query", async () => {
+    const results = await searchWikiPages({ query: "onboardng" }, wikiFixtureClient());
+    expect(results[0]!.id).toBe(1);
+  });
+
+  test("returns a snippet centred on the body match", async () => {
+    const results = await searchWikiPages({ query: "smoke tests" }, wikiFixtureClient());
+    expect(results[0]!.snippet).toContain("smoke tests");
+  });
+
+  test("exact mode finds nothing for a typo", async () => {
+    const results = await searchWikiPages(
+      { query: "onboardng", matchMode: "exact" },
+      wikiFixtureClient()
+    );
+    expect(results).toHaveLength(0);
   });
 });
