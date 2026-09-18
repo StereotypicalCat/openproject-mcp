@@ -1536,18 +1536,35 @@ export async function searchPipeline<TShallow, TDeep>(
   }
 
   // Phase 2: bounded enrichment.
+  //
+  // The explicit EnrichedCandidate annotation is required, not stylistic:
+  // without it TypeScript infers the callback's return as a UNION of two
+  // object literal types ({ deep: Awaited<TDeep> } | { deep: undefined })
+  // rather than a single type with `deep: TDeep | undefined`. The narrowing
+  // predicate below is then rejected, because a type predicate's type must be
+  // assignable to its parameter's type and `Pair` is not assignable to the
+  // `{ deep: undefined }` arm.
+  interface EnrichedCandidate {
+    candidate: TShallow;
+    deep: TDeep | undefined;
+  }
+
   let enrichmentFailures = 0;
-  const enriched = await mapWithConcurrency(selected, concurrency, async (candidate) => {
-    try {
-      return { candidate, deep: await spec.enrich(candidate) };
-    } catch (error: unknown) {
-      if (isFatalSearchError(error)) {
-        throw error;
+  const enriched: EnrichedCandidate[] = await mapWithConcurrency<TShallow, EnrichedCandidate>(
+    selected,
+    concurrency,
+    async (candidate) => {
+      try {
+        return { candidate, deep: await spec.enrich(candidate) };
+      } catch (error: unknown) {
+        if (isFatalSearchError(error)) {
+          throw error;
+        }
+        enrichmentFailures++;
+        return { candidate, deep: undefined };
       }
-      enrichmentFailures++;
-      return { candidate, deep: undefined };
     }
-  });
+  );
 
   interface Pair {
     candidate: TShallow;
