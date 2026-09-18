@@ -231,10 +231,10 @@ describe("OpenApi MCP Tool Registration & Execution", () => {
     await server.close();
   });
 
-  test("allTools includes openproject_get_openapi_spec (total: 18 tools)", () => {
+  test("allTools includes openproject_get_openapi_spec (total: 19 tools)", () => {
     const toolNames = allTools.map((t) => t.name);
     expect(toolNames).toContain("openproject_get_openapi_spec");
-    expect(allTools).toHaveLength(18);
+    expect(allTools).toHaveLength(19);
   });
 });
 

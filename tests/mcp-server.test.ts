@@ -5,7 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { createServer, SERVER_NAME, SERVER_VERSION } from "../src/server";
 
 describe("MCP Server Factory", () => {
-  test("creates server and lists all 18 tools via InMemoryTransport", async () => {
+  test("creates server and lists all 19 tools via InMemoryTransport", async () => {
     const config = {
       baseUrl: "http://localhost:8080",
       apiKey: "test-key",
@@ -21,13 +21,14 @@ describe("MCP Server Factory", () => {
     await client.connect(clientTransport);
 
     const toolsResult = await client.listTools();
-    expect(toolsResult.tools).toHaveLength(18);
+    expect(toolsResult.tools).toHaveLength(19);
     const names = toolsResult.tools.map((t) => t.name);
     expect(names).toContain("openproject_list_projects");
     expect(names).toContain("openproject_get_project");
     expect(names).toContain("openproject_list_work_packages");
     expect(names).toContain("openproject_get_work_package");
     expect(names).toContain("openproject_list_work_package_activities");
+    expect(names).toContain("openproject_search_work_packages");
     expect(names).toContain("openproject_list_queries");
     expect(names).toContain("openproject_get_query");
     expect(names).toContain("openproject_list_types");
@@ -143,7 +144,7 @@ describe("MCP Server Factory", () => {
 
     // In read-only mode, only readOnly: true tools should be registered
     const toolsResult = await client.listTools();
-    expect(toolsResult.tools).toHaveLength(18);
+    expect(toolsResult.tools).toHaveLength(19);
 
     await client.close();
     await mcpServer.stop();

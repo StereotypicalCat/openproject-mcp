@@ -16,6 +16,7 @@ import {
   listWorkPackages,
   getWorkPackage,
   listWorkPackageActivities,
+  searchWorkPackages,
 } from "../services/work-packages";
 import type { FilterElement } from "../client/types";
 
@@ -215,10 +216,88 @@ export const listWorkPackageActivitiesTool: ToolDefinition<
   execute: handleListWorkPackageActivities,
 };
 
+export const searchWorkPackagesShape = {
+  query: z
+    .string()
+    .min(1)
+    .describe(
+      "Search text matched against work package subjects, descriptions, and " +
+        "comments. Natural-language phrasing works and typos are tolerated."
+    ),
+  projectId: z
+    .union([z.number().int().positive(), z.string().min(1)])
+    .optional()
+    .describe("Scope search to a specific project by numeric ID or slug identifier"),
+  status: z
+    .union([z.enum(["open", "closed"]), z.number().int().positive()])
+    .optional()
+    .describe("Filter by status: 'open', 'closed', or numeric status ID"),
+  matchMode: z
+    .enum(["fuzzy", "exact"])
+    .optional()
+    .default("fuzzy")
+    .describe(
+      "Matching strategy. 'fuzzy' (default) tolerates typos, word reordering, and " +
+        "partial words. Use 'exact' only for literal strings you know verbatim."
+    ),
+  offset: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .default(1)
+    .describe("Page number to retrieve (1-based, default 1)"),
+  pageSize: z
+    .number()
+    .int()
+    .positive()
+    .max(100)
+    .optional()
+    .default(20)
+    .describe("Number of items per page (max 100, default 20)"),
+};
+
+export type SearchWorkPackagesArgs = z.input<z.ZodObject<typeof searchWorkPackagesShape>>;
+
+/**
+ * Tool execution handler for openproject_search_work_packages.
+ */
+export async function handleSearchWorkPackages(
+  args: SearchWorkPackagesArgs
+): Promise<McpToolResponse> {
+  try {
+    const result = await searchWorkPackages(args.query, {
+      projectId: args.projectId,
+      status: args.status,
+      matchMode: args.matchMode,
+      offset: args.offset,
+      pageSize: args.pageSize,
+    });
+    return formatToolSuccess(result);
+  } catch (error) {
+    return formatToolError(error);
+  }
+}
+
+export const searchWorkPackagesTool: ToolDefinition<
+  typeof searchWorkPackagesShape,
+  SearchWorkPackagesArgs
+> = {
+  name: "openproject_search_work_packages",
+  description:
+    "Search work packages by subject, description, and comments. Accepts " +
+    "natural-language phrasing and tolerates typos. Returns results ranked by " +
+    "relevance with matching excerpts.",
+  parameters: searchWorkPackagesShape,
+  readOnly: true,
+  execute: handleSearchWorkPackages,
+};
+
 export const workPackageTools = [
   listWorkPackagesTool,
   getWorkPackageTool,
   listWorkPackageActivitiesTool,
+  searchWorkPackagesTool,
 ];
 
 /**
@@ -228,4 +307,5 @@ export function registerWorkPackageTools(server: McpServer): void {
   registerTool(server, listWorkPackagesTool);
   registerTool(server, getWorkPackageTool);
   registerTool(server, listWorkPackageActivitiesTool);
+  registerTool(server, searchWorkPackagesTool);
 }

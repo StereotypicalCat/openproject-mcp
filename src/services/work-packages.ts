@@ -18,6 +18,8 @@ import type {
   WorkPackageSummary,
 } from "../client/types.ts";
 import { resolveClient, resolveProjectId } from "./helper.ts";
+import { searchPipeline } from "../search/pipeline.ts";
+import type { FieldSpec, MatchMode } from "../search/rank.ts";
 
 export interface ListWorkPackagesParams extends WorkPackageFilterParams {
   pageSize?: number;
@@ -29,6 +31,10 @@ export interface SearchWorkPackagesOptions {
   projectId?: number | string;
   pageSize?: number;
   offset?: number;
+  status?: "open" | "closed" | string | number;
+  typeId?: number | string;
+  assigneeId?: number | string;
+  matchMode?: MatchMode;
 }
 
 /**
@@ -73,23 +79,143 @@ export async function getWorkPackage(
   return normalizeWorkPackage(response);
 }
 
+export interface WorkPackageSearchResult {
+  workPackage: WorkPackageSummary;
+  /** Relevance score in the range 0..1. */
+  score: number;
+  matchedFields: string[];
+  snippet?: string;
+}
+
+export interface WorkPackageSearchPage extends PaginatedResult<WorkPackageSearchResult> {
+  elements: WorkPackageSearchResult[];
+  degraded: boolean;
+  enrichmentFailures: number;
+}
+
+interface WorkPackageDeepContent {
+  id: number;
+  description: string;
+  comments: string[];
+}
+
+const MAX_WORK_PACKAGE_CANDIDATES = 250;
+
 /**
- * Convenience helper to search work packages by subject text, optionally within a project.
+ * Fetches the description and comment text for one work package.
+ */
+async function fetchWorkPackageDeepContent(
+  workPackageId: number,
+  client: OpenProjectClient
+): Promise<WorkPackageDeepContent> {
+  const [detail, activities] = await Promise.all([
+    getWorkPackage(workPackageId, client),
+    listWorkPackageActivities({ workPackageId, onlyComments: true }, client),
+  ]);
+
+  return {
+    id: workPackageId,
+    description: detail.description ?? "",
+    comments: activities
+      .map((activity) => activity.comment ?? "")
+      .filter((comment) => comment.length > 0),
+  };
+}
+
+/**
+ * Searches work packages by subject, description, and comments using fuzzy
+ * matching.
+ *
+ * Candidates come from the union of two parallel requests: the precise
+ * server-side `subject ~ query` filter (so every result the old
+ * implementation returned is still returned) and a broad recency-ordered
+ * window (so fuzzy matching has something to rank). Fuzzy matching therefore
+ * only ever adds results, never removes them.
  */
 export async function searchWorkPackages(
   query: string,
   options?: SearchWorkPackagesOptions,
   client?: OpenProjectClient
-): Promise<PaginatedResult<WorkPackageSummary>> {
-  return listWorkPackages(
+): Promise<WorkPackageSearchPage> {
+  const opClient = resolveClient(client);
+  const matchMode = options?.matchMode ?? "fuzzy";
+
+  const sharedFilters = {
+    projectId: options?.projectId,
+    status: options?.status,
+    typeId: options?.typeId,
+    assigneeId: options?.assigneeId,
+  };
+
+  const fetchCandidates = async (): Promise<WorkPackageSummary[]> => {
+    const [precise, broad] = await Promise.all([
+      listWorkPackages(
+        { ...sharedFilters, subject: query, pageSize: MAX_WORK_PACKAGE_CANDIDATES },
+        opClient
+      ).catch(() => ({ items: [] as WorkPackageSummary[] })),
+      matchMode === "exact"
+        ? Promise.resolve({ items: [] as WorkPackageSummary[] })
+        : listWorkPackages(
+            {
+              ...sharedFilters,
+              pageSize: MAX_WORK_PACKAGE_CANDIDATES,
+              sortBy: '[["updatedAt","desc"]]',
+            },
+            opClient
+          ).catch(() => ({ items: [] as WorkPackageSummary[] })),
+    ]);
+
+    const byId = new Map<number, WorkPackageSummary>();
+    for (const item of [...precise.items, ...broad.items]) {
+      byId.set(item.id, item);
+    }
+    return Array.from(byId.values()).slice(0, MAX_WORK_PACKAGE_CANDIDATES);
+  };
+
+  const shallowFields: FieldSpec<WorkPackageSummary>[] = [
+    { name: "subject", weight: 3, extract: (wp) => wp.subject },
+  ];
+
+  const deepFields: FieldSpec<WorkPackageDeepContent>[] = [
+    { name: "description", weight: 1, extract: (d) => d.description },
+    { name: "comments", weight: 1, extract: (d) => d.comments },
+  ];
+
+  const result = await searchPipeline<WorkPackageSummary, WorkPackageDeepContent>(
     {
-      subject: query,
-      projectId: options?.projectId,
-      pageSize: options?.pageSize,
-      offset: options?.offset,
+      fetchCandidates,
+      shallowFields,
+      enrich: (workPackage) => fetchWorkPackageDeepContent(workPackage.id, opClient),
+      deepFields,
+      recencyOf: (workPackage) => workPackage.updatedAt ?? "",
+      idOf: (workPackage) => workPackage.id,
     },
-    client
+    query,
+    { matchMode }
   );
+
+  const all: WorkPackageSearchResult[] = result.ranked.map((entry) => ({
+    workPackage: entry.record,
+    score: entry.score,
+    matchedFields: entry.matches.map((match) => match.field),
+    snippet: entry.matches[0]?.snippet,
+  }));
+
+  const offset = options?.offset ?? 1;
+  const pageSize = options?.pageSize ?? 20;
+  const startIndex = Math.max(0, offset - 1);
+  const paged = all.slice(startIndex, startIndex + pageSize);
+
+  return {
+    total: all.length,
+    count: paged.length,
+    pageSize,
+    offset,
+    elements: paged,
+    items: paged,
+    degraded: result.degraded,
+    enrichmentFailures: result.enrichmentFailures,
+  };
 }
 
 export interface ActivityDetail {

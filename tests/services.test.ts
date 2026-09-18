@@ -334,9 +334,12 @@ describe("Work Packages Service", () => {
   });
 
   test("searchWorkPackages sets subject query filter", async () => {
-    let requestedUrl = "";
+    // The union strategy issues several requests in parallel (the precise
+    // subject filter, a broad recency window, and per-candidate enrichment
+    // calls), so every requested URL is captured rather than just the last.
+    const requestedUrls: string[] = [];
     const mockFetch = async (input: string | URL | Request) => {
-      requestedUrl = String(input);
+      requestedUrls.push(String(input));
       return new Response(
         JSON.stringify({
           _type: "Collection",
@@ -357,11 +360,12 @@ describe("Work Packages Service", () => {
     });
 
     await searchWorkPackages("MCP Server", { projectId: 4 }, client);
-    expect(requestedUrl).toContain("filters=");
-    // Filter must include substring operator for subject
-    const decodedUrl = decodeURIComponent(requestedUrl.replace(/\+/g, " "));
-    expect(decodedUrl).toContain('"subject"');
-    expect(decodedUrl).toContain("MCP Server");
+
+    // Filter must include substring operator for subject on the precise request.
+    const decodedUrls = requestedUrls.map((url) => decodeURIComponent(url.replace(/\+/g, " ")));
+    const subjectRequestUrl = decodedUrls.find((url) => url.includes('"subject"'));
+    expect(subjectRequestUrl).toBeDefined();
+    expect(subjectRequestUrl).toContain("MCP Server");
   });
 });
 
@@ -773,6 +777,112 @@ describe("Live Container Integration (Domain Services)", () => {
     const activities = await domainServices.listWorkPackageActivities({ workPackageId: 38 }, client);
     expect(activities.length).toBeGreaterThan(0);
     expect(activities[0]!.id).toBeDefined();
+  });
+});
+
+describe("Work Package Fuzzy Search", () => {
+  function workPackageFixtureClient(calls: string[] = []) {
+    const elements = [
+      {
+        _type: "WorkPackage",
+        id: 1,
+        subject: "Fix login redirect",
+        _links: {
+          type: { title: "Bug" },
+          status: { title: "New" },
+          project: { href: "/api/v3/projects/1", title: "Demo project" },
+        },
+        updatedAt: "2026-09-10T00:00:00Z",
+      },
+      {
+        _type: "WorkPackage",
+        id: 2,
+        subject: "Update dependencies",
+        _links: {
+          type: { title: "Task" },
+          status: { title: "New" },
+          project: { href: "/api/v3/projects/1", title: "Demo project" },
+        },
+        updatedAt: "2026-09-11T00:00:00Z",
+      },
+    ];
+
+    return {
+      get: async (path: string, query?: Record<string, unknown>) => {
+        // Record the query alongside the path so assertions can inspect the
+        // filter payload (the real client encodes filters into the query
+        // string of the resolved URL rather than the bare path).
+        calls.push(query ? `${path}?${JSON.stringify(query)}` : path);
+        if (path.startsWith("work_packages/") || path.startsWith("/api/v3/work_packages/")) {
+          // Extract the id following "work_packages/" specifically, rather
+          // than concatenating every digit in the path: the activities path
+          // (`/api/v3/work_packages/{id}/activities`) contains a stray digit
+          // in "v3" that a blanket \D+ strip would fold into the id.
+          const id = Number(path.match(/work_packages\/(\d+)/)?.[1] ?? NaN);
+          if (path.includes("activities")) {
+            return {
+              _type: "Collection",
+              _embedded: {
+                elements:
+                  id === 2
+                    ? [
+                        {
+                          id: 90,
+                          version: 1,
+                          createdAt: "2026-09-11T00:00:00Z",
+                          comment: { raw: "Blocked by the expired TLS certificate" },
+                          _links: { user: { href: "/api/v3/users/4", title: "Admin" } },
+                        },
+                      ]
+                    : [],
+              },
+            };
+          }
+          const match = elements.find((e) => e.id === id);
+          return { ...match, description: { raw: id === 1 ? "Session cookie is dropped" : "" } };
+        }
+        return {
+          _type: "Collection",
+          total: elements.length,
+          count: elements.length,
+          pageSize: 100,
+          offset: 1,
+          _embedded: { elements },
+        };
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  test("finds a work package despite a typo in the subject query", async () => {
+    const result = await searchWorkPackages("login redirct", {}, workPackageFixtureClient());
+    expect(result.elements[0]!.workPackage.id).toBe(1);
+  });
+
+  test("finds a work package by a comment only", async () => {
+    const result = await searchWorkPackages("TLS certificate", {}, workPackageFixtureClient());
+    expect(result.elements[0]!.workPackage.id).toBe(2);
+    expect(result.elements[0]!.matchedFields).toContain("comments");
+  });
+
+  test("finds a work package by description only", async () => {
+    const result = await searchWorkPackages("session cookie", {}, workPackageFixtureClient());
+    expect(result.elements[0]!.workPackage.id).toBe(1);
+    expect(result.elements[0]!.matchedFields).toContain("description");
+  });
+
+  test("still issues the precise server-side subject filter", async () => {
+    const calls: string[] = [];
+    await searchWorkPackages("login", {}, workPackageFixtureClient(calls));
+    expect(calls.some((path) => path.includes("subject"))).toBe(true);
+  });
+
+  test("exact mode finds nothing for a typo", async () => {
+    const result = await searchWorkPackages(
+      "login redirct",
+      { matchMode: "exact" },
+      workPackageFixtureClient()
+    );
+    expect(result.elements).toHaveLength(0);
   });
 });
 
