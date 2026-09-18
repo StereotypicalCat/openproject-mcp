@@ -14,7 +14,11 @@ import {
   listUsers,
 } from "../src/services/metadata.ts";
 import * as domainServices from "../src/services/index.ts";
-import { OpenProjectClient } from "../src/client/api-client.ts";
+import {
+  OpenProjectClient,
+  OpenProjectAuthenticationError,
+  OpenProjectError,
+} from "../src/client/api-client.ts";
 import { runWithContext, type RequestContext } from "../src/context.ts";
 
 describe("Domain Services Helper", () => {
@@ -883,6 +887,57 @@ describe("Work Package Fuzzy Search", () => {
       workPackageFixtureClient()
     );
     expect(result.elements).toHaveLength(0);
+  });
+
+  test("propagates an auth failure from candidate fetch instead of reporting no results", async () => {
+    const client = {
+      get: async () => {
+        throw new OpenProjectAuthenticationError();
+      },
+    } as unknown as OpenProjectClient;
+
+    await expect(searchWorkPackages("anything", {}, client)).rejects.toThrow(
+      OpenProjectAuthenticationError
+    );
+  });
+
+  test("a non-fatal failure on one candidate leg still returns results from the other", async () => {
+    let calls = 0;
+    const client = {
+      get: async (path: string) => {
+        calls++;
+        // Fail the precise (subject-filtered) leg non-fatally; the broad
+        // leg (no subject filter) should still supply candidates.
+        if (calls === 1) {
+          throw new OpenProjectError("boom", { statusCode: 500 });
+        }
+        return {
+          _type: "Collection",
+          total: 1,
+          count: 1,
+          pageSize: 100,
+          offset: 1,
+          _embedded: {
+            elements: [
+              {
+                _type: "WorkPackage",
+                id: 1,
+                subject: "Fix login redirect",
+                _links: {
+                  type: { title: "Bug" },
+                  status: { title: "New" },
+                  project: { href: "/api/v3/projects/1", title: "Demo project" },
+                },
+                updatedAt: "2026-09-10T00:00:00Z",
+              },
+            ],
+          },
+        };
+      },
+    } as unknown as OpenProjectClient;
+
+    const result = await searchWorkPackages("login", {}, client);
+    expect(result.elements[0]!.workPackage.id).toBe(1);
   });
 });
 

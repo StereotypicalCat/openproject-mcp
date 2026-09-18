@@ -18,7 +18,7 @@ import type {
   WorkPackageSummary,
 } from "../client/types.ts";
 import { resolveClient, resolveProjectId } from "./helper.ts";
-import { searchPipeline } from "../search/pipeline.ts";
+import { isFatalSearchError, searchPipeline } from "../search/pipeline.ts";
 import type { FieldSpec, MatchMode } from "../search/rank.ts";
 
 export interface ListWorkPackagesParams extends WorkPackageFilterParams {
@@ -147,22 +147,34 @@ export async function searchWorkPackages(
     assigneeId: options?.assigneeId,
   };
 
+  // A non-fatal failure on one leg (e.g. a transient 500) must not kill the
+  // whole search: the other leg's candidates are still worth ranking. A
+  // fatal failure (401/403/429) must propagate rather than degrade into "0
+  // candidates" — an expired token must not be reported to the model as "no
+  // results found".
+  const listCandidates = async (
+    params: ListWorkPackagesParams
+  ): Promise<{ items: WorkPackageSummary[] }> => {
+    try {
+      return await listWorkPackages(params, opClient);
+    } catch (error: unknown) {
+      if (isFatalSearchError(error)) {
+        throw error;
+      }
+      return { items: [] };
+    }
+  };
+
   const fetchCandidates = async (): Promise<WorkPackageSummary[]> => {
     const [precise, broad] = await Promise.all([
-      listWorkPackages(
-        { ...sharedFilters, subject: query, pageSize: MAX_WORK_PACKAGE_CANDIDATES },
-        opClient
-      ).catch(() => ({ items: [] as WorkPackageSummary[] })),
+      listCandidates({ ...sharedFilters, subject: query, pageSize: MAX_WORK_PACKAGE_CANDIDATES }),
       matchMode === "exact"
         ? Promise.resolve({ items: [] as WorkPackageSummary[] })
-        : listWorkPackages(
-            {
-              ...sharedFilters,
-              pageSize: MAX_WORK_PACKAGE_CANDIDATES,
-              sortBy: '[["updatedAt","desc"]]',
-            },
-            opClient
-          ).catch(() => ({ items: [] as WorkPackageSummary[] })),
+        : listCandidates({
+            ...sharedFilters,
+            pageSize: MAX_WORK_PACKAGE_CANDIDATES,
+            sortBy: '[["updatedAt","desc"]]',
+          }),
     ]);
 
     const byId = new Map<number, WorkPackageSummary>();
