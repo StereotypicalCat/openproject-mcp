@@ -138,3 +138,69 @@ describe("Work Package Activities Service", () => {
     });
   });
 });
+
+describe("Activity Ranking", () => {
+  function activitiesClient() {
+    return {
+      get: async () => ({
+        _type: "Collection",
+        _embedded: {
+          elements: [
+            {
+              id: 1,
+              version: 1,
+              createdAt: "2026-09-01T00:00:00Z",
+              comment: { raw: "Deployment blocked by the expired TLS certificate" },
+              _links: { user: { href: "/api/v3/users/4", title: "Admin" } },
+            },
+            {
+              id: 2,
+              version: 2,
+              createdAt: "2026-09-02T00:00:00Z",
+              comment: { raw: "Merged the dependency bump" },
+              _links: { user: { href: "/api/v3/users/5", title: "Dev" } },
+            },
+          ],
+        },
+      }),
+    } as unknown as OpenProjectClient;
+  }
+
+  test("ranks activities by relevance when a query is supplied", async () => {
+    const result = await listWorkPackageActivities(
+      { workPackageId: 1, query: "TLS certificate" },
+      activitiesClient()
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]!.id).toBe(1);
+  });
+
+  test("tolerates a typo in the query", async () => {
+    const result = await listWorkPackageActivities(
+      { workPackageId: 1, query: "certificat" },
+      activitiesClient()
+    );
+    expect(result[0]!.id).toBe(1);
+  });
+
+  test("returns every activity when no query is supplied", async () => {
+    const result = await listWorkPackageActivities({ workPackageId: 1 }, activitiesClient());
+    expect(result).toHaveLength(2);
+  });
+
+  test("exact mode finds nothing for a typo", async () => {
+    // Deliberately not "certificat" (the brief's original value): that string
+    // is a literal prefix substring of "certificate", so byte-for-byte exact
+    // containment matching (scoreExact in src/search/rank.ts, "reproducing
+    // the pre-fuzzy behaviour byte for byte") finds it regardless of typo
+    // tolerance, making the original fixture unable to exercise "exact mode
+    // rejects typos" against a correct implementation. "certificatee" (an
+    // extra trailing letter) is not a substring of "certificate", so it
+    // exercises the same intent without the collision.
+    const result = await listWorkPackageActivities(
+      { workPackageId: 1, query: "certificatee", matchMode: "exact" },
+      activitiesClient()
+    );
+    expect(result).toHaveLength(0);
+  });
+});

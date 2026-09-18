@@ -19,7 +19,7 @@ import type {
 } from "../client/types.ts";
 import { resolveClient, resolveProjectId } from "./helper.ts";
 import { isFatalSearchError, searchPipeline } from "../search/pipeline.ts";
-import type { FieldSpec, MatchMode } from "../search/rank.ts";
+import { rankRecords, type FieldSpec, type MatchMode } from "../search/rank.ts";
 
 export interface ListWorkPackagesParams extends WorkPackageFilterParams {
   pageSize?: number;
@@ -249,6 +249,9 @@ export interface WorkPackageActivity {
 export interface ListWorkPackageActivitiesOptions {
   workPackageId: number;
   onlyComments?: boolean;
+  /** Ranks the fetched activities client-side. No extra API calls. */
+  query?: string;
+  matchMode?: MatchMode;
 }
 
 /**
@@ -307,6 +310,22 @@ export async function listWorkPackageActivities(
     });
   }
 
-  return activities;
+  const query = options.query?.trim() ?? "";
+  if (query.length === 0) {
+    return activities;
+  }
+
+  const fields: FieldSpec<WorkPackageActivity>[] = [
+    { name: "comment", weight: 3, extract: (activity) => activity.comment },
+    {
+      name: "details",
+      weight: 1,
+      extract: (activity) => activity.details.map((detail) => detail.raw),
+    },
+  ];
+
+  return rankRecords(activities, query, fields, {
+    matchMode: options.matchMode ?? "fuzzy",
+  }).map((entry) => entry.record);
 }
 

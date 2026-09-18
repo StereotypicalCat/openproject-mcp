@@ -181,6 +181,21 @@ export const listWorkPackageActivitiesShape = {
     .describe(
       "When true, filters out property change audits and returns only comments"
     ),
+  query: z
+    .string()
+    .optional()
+    .describe(
+      "Optional search text to rank activities by relevance. Matched against " +
+        "comment text and change details; tolerates typos."
+    ),
+  matchMode: z
+    .enum(["fuzzy", "exact"])
+    .optional()
+    .default("fuzzy")
+    .describe(
+      "Matching strategy. 'fuzzy' (default) tolerates typos, word reordering, and " +
+        "partial words. Use 'exact' only for literal strings you know verbatim."
+    ),
 };
 
 export type ListWorkPackageActivitiesArgs = z.infer<
@@ -197,6 +212,8 @@ export async function handleListWorkPackageActivities(
     const result = await listWorkPackageActivities({
       workPackageId: args.workPackageId,
       onlyComments: args.onlyComments,
+      query: args.query,
+      matchMode: args.matchMode,
     });
     return formatToolSuccess(result);
   } catch (error) {

@@ -598,6 +598,7 @@ describe("Work Package Tools", () => {
         handleListWorkPackageActivities({
           workPackageId: 999,
           onlyComments: false,
+          matchMode: "fuzzy",
         })
     );
 
