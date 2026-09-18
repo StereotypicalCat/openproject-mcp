@@ -96,7 +96,9 @@ export const searchMeetingsShape = {
     .string()
     .min(1)
     .describe(
-      "Search keywords to match across meeting titles, locations, and agenda item notes"
+      "Search keywords. Natural-language phrasing works; matched against meeting " +
+        "titles, locations, project and author names, agenda item titles and notes, " +
+        "meeting outcomes, and participant names."
     ),
   projectId: z
     .union([z.number().int().positive(), z.string().min(1)])
@@ -117,6 +119,14 @@ export const searchMeetingsShape = {
     .optional()
     .default(20)
     .describe("Number of items per page (max 100, default 20)"),
+  matchMode: z
+    .enum(["fuzzy", "exact"])
+    .optional()
+    .default("fuzzy")
+    .describe(
+      "Matching strategy. 'fuzzy' (default) tolerates typos, word reordering, and " +
+        "partial words. Use 'exact' only for literal strings you know verbatim."
+    ),
 };
 
 export type SearchMeetingsArgs = z.input<z.ZodObject<typeof searchMeetingsShape>>;
@@ -163,7 +173,10 @@ export const searchMeetingsTool: ToolDefinition<
   SearchMeetingsArgs
 > = {
   name: "openproject_search_meetings",
-  description: "Search across meetings and agenda items by keywords.",
+  description:
+    "Search meetings and agenda items. Accepts natural-language phrasing and " +
+    "tolerates typos and reordered words. Returns results ranked by relevance " +
+    "with matching excerpts.",
   parameters: searchMeetingsShape,
   readOnly: true,
   execute: handleSearchMeetings,

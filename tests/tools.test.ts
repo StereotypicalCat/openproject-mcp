@@ -1187,7 +1187,9 @@ describe("Meeting Tools", () => {
 
     expect(searchMeetingsTool.name).toBe("openproject_search_meetings");
     expect(searchMeetingsTool.description).toBe(
-      "Search across meetings and agenda items by keywords."
+      "Search meetings and agenda items. Accepts natural-language phrasing and " +
+        "tolerates typos and reordered words. Returns results ranked by relevance " +
+        "with matching excerpts."
     );
     expect(searchMeetingsTool.readOnly).toBe(true);
   });

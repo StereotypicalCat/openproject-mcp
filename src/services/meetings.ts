@@ -7,6 +7,9 @@ import type { OpenProjectClient } from "../client/api-client.ts";
 import { extractIdFromHref, extractRawText } from "../client/hal-parser.ts";
 import type { HalCollection, HalResource } from "../client/types.ts";
 import { resolveClient, resolveProjectId } from "./helper.ts";
+import { searchPipeline } from "../search/pipeline.ts";
+import { rankRecords } from "../search/rank.ts";
+import type { FieldSpec, MatchMode } from "../search/rank.ts";
 
 export interface MeetingSummary {
   id: number;
@@ -48,12 +51,16 @@ export interface MeetingDetail extends MeetingSummary {
 
 export interface MeetingSearchResult {
   meeting: MeetingSummary;
-  matchType: "title" | "location" | "agenda_item";
+  matchType: "title" | "location" | "agenda_item" | "participant" | "project";
   matchedAgendaItems?: Array<{
     id: number;
     title: string;
     snippet?: string;
   }>;
+  /** Relevance score in the range 0..1. */
+  score: number;
+  /** Names of the fields that matched, highest scoring first. */
+  matchedFields: string[];
 }
 
 export interface PaginatedResult<T> {
@@ -63,6 +70,20 @@ export interface PaginatedResult<T> {
   offset: number;
   elements: T[];
   items?: T[];
+}
+
+export interface MeetingSearchPage extends PaginatedResult<MeetingSearchResult> {
+  /** True when some deep content could not be read. */
+  degraded: boolean;
+  enrichmentFailures: number;
+}
+
+export interface SearchMeetingsParams {
+  query: string;
+  projectId?: string | number;
+  offset?: number;
+  pageSize?: number;
+  matchMode?: MatchMode;
 }
 
 /**
@@ -245,25 +266,6 @@ export function normalizeMeetingDetail(
 }
 
 /**
- * Extracts a concise text snippet centered around query match keyword.
- */
-function extractSnippet(text: string, query: string, maxLength = 160): string {
-  if (!text) return "";
-  const lowerText = text.toLowerCase();
-  const lowerQuery = query.toLowerCase();
-  const idx = lowerText.indexOf(lowerQuery);
-  if (idx === -1) {
-    return text.length <= maxLength ? text : `${text.slice(0, maxLength)}...`;
-  }
-  const start = Math.max(0, idx - 40);
-  const end = Math.min(text.length, idx + query.length + 80);
-  let snippet = text.slice(start, end).trim();
-  if (start > 0) snippet = `...${snippet}`;
-  if (end < text.length) snippet = `${snippet}...`;
-  return snippet;
-}
-
-/**
  * Lists meetings visible to the user matching optional project, time, and pagination filters.
  */
 export async function listMeetings(
@@ -363,137 +365,187 @@ export async function getMeeting(
   return normalizeMeetingDetail(meetingResource);
 }
 
+interface MeetingDeepContent {
+  id: number;
+  agendaItems: AgendaItem[];
+  participants: Array<{ id: number; name: string }>;
+}
+
 /**
- * Deep searches across meetings by title, location, and agenda item notes.
+ * Fetches agenda items and participants for one meeting.
  */
-export async function searchMeetings(
-  params: {
-    query: string;
-    projectId?: string | number;
-    offset?: number;
-    pageSize?: number;
-  },
-  client?: OpenProjectClient
-): Promise<PaginatedResult<MeetingSearchResult>> {
-  const opClient = resolveClient(client);
-  const needle = params.query.toLowerCase().trim();
+async function fetchMeetingDeepContent(
+  meetingId: number,
+  client: OpenProjectClient
+): Promise<MeetingDeepContent> {
+  const [agendaResponse, detail] = await Promise.all([
+    client.get<HalCollection<Record<string, unknown>>>(
+      `/api/v3/meetings/${meetingId}/agenda_items`
+    ),
+    client.get<HalResource>(`/api/v3/meetings/${meetingId}`),
+  ]);
 
-  // Fetch candidate meetings scoped to project if specified, across multiple pages up to cap
-  const maxCandidates = 250;
-  const candidateBatchSize = Math.min(maxCandidates, Math.max(params.pageSize ?? 50, 50));
-  const candidateMeetings: MeetingSummary[] = [];
-  let candidateOffset = 1;
-
-  while (candidateMeetings.length < maxCandidates) {
-    const meetingsResult = await listMeetings(
-      {
-        projectId: params.projectId,
-        offset: candidateOffset,
-        pageSize: candidateBatchSize,
-      },
-      opClient
-    );
-
-    const elements = meetingsResult.elements;
-    if (elements.length === 0) {
-      break;
-    }
-
-    candidateMeetings.push(...elements);
-
-    // Stop if all meetings fetched or fewer elements returned than requested page size
-    if (
-      candidateMeetings.length >= meetingsResult.total ||
-      elements.length < candidateBatchSize
-    ) {
-      break;
-    }
-
-    candidateOffset += 1;
-  }
-
-  const scopedCandidates = candidateMeetings.slice(0, maxCandidates);
-
-  // Process candidate meetings concurrently
-  const matchPromises = scopedCandidates.map(async (meeting) => {
-    const titleMatches = meeting.title.toLowerCase().includes(needle);
-    const locationMatches = Boolean(
-      meeting.location && meeting.location.toLowerCase().includes(needle)
-    );
-
-    // Concurrently fetch agenda items for candidate meeting
-    const agendaResponse = await opClient
-      .get<HalCollection<Record<string, unknown>>>(`/api/v3/meetings/${meeting.id}/agenda_items`)
-      .catch(() => undefined);
-
-    const rawItems = agendaResponse?._embedded?.elements ?? [];
-    const agendaItems = rawItems.map(normalizeAgendaItem);
-
-    const matchedAgendaItems: Array<{ id: number; title: string; snippet?: string }> = [];
-    for (const item of agendaItems) {
-      const itemTitleMatches = item.title.toLowerCase().includes(needle);
-      const itemNotesMatches = Boolean(item.notes && item.notes.toLowerCase().includes(needle));
-      const outcomeNotesMatch = item.outcomes.find((o) =>
-        o.notes.toLowerCase().includes(needle)
-      );
-
-      if (itemTitleMatches || itemNotesMatches || outcomeNotesMatch) {
-        let snippetText = "";
-        if (itemNotesMatches && item.notes) {
-          snippetText = extractSnippet(item.notes, params.query);
-        } else if (outcomeNotesMatch) {
-          snippetText = extractSnippet(outcomeNotesMatch.notes, params.query);
-        } else {
-          snippetText = item.notes ? extractSnippet(item.notes, params.query) : item.title;
-        }
-
-        matchedAgendaItems.push({
-          id: item.id,
-          title: item.title,
-          snippet: snippetText || undefined,
-        });
-      }
-    }
-
-    let matchType: "title" | "location" | "agenda_item" | null = null;
-    if (titleMatches) {
-      matchType = "title";
-    } else if (locationMatches) {
-      matchType = "location";
-    } else if (matchedAgendaItems.length > 0) {
-      matchType = "agenda_item";
-    }
-
-    if (!matchType) {
-      return null;
-    }
-
-    const searchResult: MeetingSearchResult = {
-      meeting,
-      matchType,
-      matchedAgendaItems: matchedAgendaItems.length > 0 ? matchedAgendaItems : undefined,
-    };
-
-    return searchResult;
-  });
-
-  const resolvedMatches = await Promise.all(matchPromises);
-  const matchedElements: MeetingSearchResult[] = resolvedMatches.filter(
-    (item): item is MeetingSearchResult => item !== null
-  );
-
-  const total = matchedElements.length;
-  const offset = params.offset ?? 1;
-  const requestedPageSize = params.pageSize ?? 20;
-  const startIndex = Math.max(0, offset - 1);
-  const pagedElements = matchedElements.slice(startIndex, startIndex + requestedPageSize);
+  const rawItems = agendaResponse?._embedded?.elements ?? [];
+  const meetingDetail = normalizeMeetingDetail(detail);
 
   return {
-    total,
-    count: pagedElements.length,
-    pageSize: requestedPageSize,
+    id: meetingId,
+    agendaItems: rawItems.map(normalizeAgendaItem),
+    participants: meetingDetail.participants,
+  };
+}
+
+/**
+ * Maps matched field names onto the legacy matchType discriminator, in
+ * priority order.
+ */
+function resolveMatchType(matchedFields: string[]): MeetingSearchResult["matchType"] {
+  if (matchedFields.includes("title")) return "title";
+  if (matchedFields.includes("location")) return "location";
+  if (
+    matchedFields.includes("agenda_item") ||
+    matchedFields.includes("agenda_notes") ||
+    matchedFields.includes("outcome_notes")
+  ) {
+    return "agenda_item";
+  }
+  if (matchedFields.includes("participant")) return "participant";
+  return "project";
+}
+
+/**
+ * Ranks a meeting's agenda items against the query directly.
+ *
+ * Do NOT try to work out which item matched by searching the meeting-level
+ * snippet: snippets are trimmed and ellipsized, so the original text is not
+ * recoverable from them. Ranking the items themselves gives exact per-item
+ * scores and snippets for free.
+ */
+function collectMatchedAgendaItems(
+  deep: MeetingDeepContent | undefined,
+  query: string,
+  matchMode: MatchMode
+): Array<{ id: number; title: string; snippet?: string }> {
+  if (!deep || deep.agendaItems.length === 0) {
+    return [];
+  }
+
+  const fields: FieldSpec<AgendaItem>[] = [
+    { name: "title", weight: 2, extract: (item) => item.title },
+    { name: "notes", weight: 1.5, extract: (item) => item.notes },
+    {
+      name: "outcomes",
+      weight: 1.5,
+      extract: (item) => item.outcomes.map((outcome) => outcome.notes),
+    },
+  ];
+
+  return rankRecords(deep.agendaItems, query, fields, { matchMode }).map((entry) => ({
+    id: entry.record.id,
+    title: entry.record.title,
+    snippet: entry.matches[0]?.snippet,
+  }));
+}
+
+/**
+ * Deep searches meetings across titles, locations, agenda items,
+ * participants, and project names using fuzzy matching.
+ */
+export async function searchMeetings(
+  params: SearchMeetingsParams,
+  client?: OpenProjectClient
+): Promise<MeetingSearchPage> {
+  const opClient = resolveClient(client);
+  const matchMode = params.matchMode ?? "fuzzy";
+
+  const MAX_CANDIDATES = 250;
+  const CANDIDATE_BATCH_SIZE = 100;
+
+  const fetchCandidates = async (): Promise<MeetingSummary[]> => {
+    const collected: MeetingSummary[] = [];
+    let offset = 1;
+
+    while (collected.length < MAX_CANDIDATES) {
+      const page = await listMeetings(
+        { projectId: params.projectId, offset, pageSize: CANDIDATE_BATCH_SIZE },
+        opClient
+      );
+
+      if (page.elements.length === 0) {
+        break;
+      }
+      collected.push(...page.elements);
+
+      if (collected.length >= page.total || page.elements.length < CANDIDATE_BATCH_SIZE) {
+        break;
+      }
+      offset += 1;
+    }
+
+    return collected.slice(0, MAX_CANDIDATES);
+  };
+
+  const shallowFields: FieldSpec<MeetingSummary>[] = [
+    { name: "title", weight: 3, extract: (m) => m.title },
+    { name: "location", weight: 1, extract: (m) => m.location },
+    { name: "project", weight: 0.5, extract: (m) => m.project.name },
+    { name: "author", weight: 0.5, extract: (m) => m.author?.name },
+  ];
+
+  const deepFields: FieldSpec<MeetingDeepContent>[] = [
+    { name: "agenda_item", weight: 2, extract: (d) => d.agendaItems.map((i) => i.title) },
+    {
+      name: "agenda_notes",
+      weight: 1.5,
+      extract: (d) => d.agendaItems.map((i) => i.notes ?? "").filter((n) => n.length > 0),
+    },
+    {
+      name: "outcome_notes",
+      weight: 1.5,
+      extract: (d) => d.agendaItems.flatMap((i) => i.outcomes.map((o) => o.notes)),
+    },
+    { name: "participant", weight: 1, extract: (d) => d.participants.map((p) => p.name) },
+  ];
+
+  const result = await searchPipeline<MeetingSummary, MeetingDeepContent>(
+    {
+      fetchCandidates,
+      shallowFields,
+      enrich: (meeting) => fetchMeetingDeepContent(meeting.id, opClient),
+      deepFields,
+      recencyOf: (meeting) => meeting.startTime,
+      idOf: (meeting) => meeting.id,
+    },
+    params.query,
+    { matchMode }
+  );
+
+  const all: MeetingSearchResult[] = result.ranked.map((entry) => {
+    const matchedFields = entry.matches.map((match) => match.field);
+    const matchedAgendaItems = collectMatchedAgendaItems(entry.deep, params.query, matchMode);
+
+    return {
+      meeting: entry.record,
+      matchType: resolveMatchType(matchedFields),
+      matchedAgendaItems: matchedAgendaItems.length > 0 ? matchedAgendaItems : undefined,
+      score: entry.score,
+      matchedFields,
+    };
+  });
+
+  const offset = params.offset ?? 1;
+  const pageSize = params.pageSize ?? 20;
+  const startIndex = Math.max(0, offset - 1);
+  const paged = all.slice(startIndex, startIndex + pageSize);
+
+  return {
+    total: all.length,
+    count: paged.length,
+    pageSize,
     offset,
-    elements: pagedElements,
-    items: pagedElements,
+    elements: paged,
+    items: paged,
+    degraded: result.degraded,
+    enrichmentFailures: result.enrichmentFailures,
   };
 }

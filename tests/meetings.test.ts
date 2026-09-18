@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { OpenProjectClient } from "../src/client/api-client.ts";
+import {
+  OpenProjectAuthenticationError,
+  OpenProjectClient,
+  OpenProjectError,
+} from "../src/client/api-client.ts";
 import { runWithContext, type RequestContext } from "../src/context.ts";
 import { listMeetings, getMeeting, searchMeetings } from "../src/services/meetings.ts";
 
@@ -129,6 +133,19 @@ describe("Meetings Service", () => {
                   notes: { raw: "Discussed critical architecture improvements." }
                 }
               ]
+            }
+          };
+        }
+        if (path === "/api/v3/meetings/2") {
+          return {
+            _type: "Meeting",
+            id: 2,
+            title: "Weekly Planning",
+            state: "open",
+            startTime: "2026-09-08T00:22:53Z",
+            endTime: "2026-09-08T01:22:53Z",
+            _links: {
+              project: { href: "/api/v3/projects/1", title: "Demo project" }
             }
           };
         }
@@ -262,8 +279,8 @@ describe("Meetings Service", () => {
           requestedOffsets.push(offset);
 
           if (offset === 1) {
-            // Page 1: 50 meetings, none matching query
-            const page1Elements = Array.from({ length: 50 }, (_, i) => ({
+            // Page 1: 100 meetings (the pipeline's candidate batch size), none matching query
+            const page1Elements = Array.from({ length: 100 }, (_, i) => ({
               _type: "Meeting",
               id: i + 1,
               title: `Daily Routine ${i + 1}`,
@@ -274,20 +291,20 @@ describe("Meetings Service", () => {
             }));
             return {
               _type: "Collection",
-              total: 55,
-              count: 50,
-              pageSize: 50,
+              total: 105,
+              count: 100,
+              pageSize: 100,
               offset: 1,
               _embedded: { elements: page1Elements },
             };
           }
 
           if (offset === 2) {
-            // Page 2: 5 meetings, meeting #52 has matching title
+            // Page 2: 5 meetings, meeting #102 has matching title
             const page2Elements = Array.from({ length: 5 }, (_, i) => ({
               _type: "Meeting",
-              id: 51 + i,
-              title: i === 1 ? "Special Architecture Sync" : `Daily Routine ${51 + i}`,
+              id: 101 + i,
+              title: i === 1 ? "Special Architecture Sync" : `Daily Routine ${101 + i}`,
               state: "open",
               startTime: "2026-09-02T10:00:00Z",
               endTime: "2026-09-02T10:30:00Z",
@@ -295,9 +312,9 @@ describe("Meetings Service", () => {
             }));
             return {
               _type: "Collection",
-              total: 55,
+              total: 105,
               count: 5,
-              pageSize: 50,
+              pageSize: 100,
               offset: 2,
               _embedded: { elements: page2Elements },
             };
@@ -313,7 +330,7 @@ describe("Meetings Service", () => {
     const res = await searchMeetings({ query: "Architecture" }, mockClient);
     expect(requestedOffsets).toEqual([1, 2]);
     expect(res.total).toBe(1);
-    expect(res.elements[0]!.meeting.id).toBe(52);
+    expect(res.elements[0]!.meeting.id).toBe(102);
     expect(res.elements[0]!.meeting.title).toBe("Special Architecture Sync");
   });
 
@@ -423,5 +440,140 @@ describe("Meetings Service", () => {
     expect(detail.notify).toBe(true);
     expect(detail.agendaItems).toBeUndefined();
     expect(agendaCalled).toBe(false);
+  });
+});
+
+describe("Meetings Fuzzy Search", () => {
+  function meetingFixtureClient() {
+    return {
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/meetings?") || path === "/api/v3/meetings") {
+          return {
+            _type: "Collection",
+            total: 2,
+            count: 2,
+            pageSize: 50,
+            offset: 1,
+            _embedded: {
+              elements: [
+                {
+                  _type: "Meeting",
+                  id: 1,
+                  title: "Approval of Q3 budget",
+                  state: "open",
+                  startTime: "2026-09-08T00:00:00Z",
+                  endTime: "2026-09-08T01:00:00Z",
+                  location: "Room A",
+                  _links: {
+                    project: { href: "/api/v3/projects/1", title: "Demo project" },
+                    author: { href: "/api/v3/users/4", title: "Müller" },
+                  },
+                },
+                {
+                  _type: "Meeting",
+                  id: 2,
+                  title: "Weekly sync",
+                  state: "open",
+                  startTime: "2026-09-09T00:00:00Z",
+                  endTime: "2026-09-09T01:00:00Z",
+                  _links: {
+                    project: { href: "/api/v3/projects/1", title: "Demo project" },
+                  },
+                },
+              ],
+            },
+          };
+        }
+        if (path === "/api/v3/meetings/1/agenda_items") {
+          return { _type: "Collection", _embedded: { elements: [] } };
+        }
+        if (path === "/api/v3/meetings/2/agenda_items") {
+          return {
+            _type: "Collection",
+            _embedded: {
+              elements: [
+                {
+                  _type: "MeetingAgendaItem",
+                  id: 20,
+                  title: "Staffing",
+                  notes: { raw: "We agreed on the hiring freeze until January." },
+                  position: 1,
+                },
+              ],
+            },
+          };
+        }
+        return { _type: "Collection", _embedded: { elements: [] } };
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  test("finds a meeting despite a typo in the query", async () => {
+    const result = await searchMeetings({ query: "budgt aproval" }, meetingFixtureClient());
+    expect(result.elements[0]!.meeting.id).toBe(1);
+    expect(result.elements[0]!.score).toBeGreaterThan(0);
+  });
+
+  test("finds a meeting with reordered query words", async () => {
+    const result = await searchMeetings({ query: "budget approval" }, meetingFixtureClient());
+    expect(result.elements[0]!.meeting.id).toBe(1);
+  });
+
+  test("finds a meeting by agenda item notes only", async () => {
+    const result = await searchMeetings({ query: "hiring freeze" }, meetingFixtureClient());
+    expect(result.elements[0]!.meeting.id).toBe(2);
+    expect(result.elements[0]!.matchType).toBe("agenda_item");
+    expect(result.elements[0]!.matchedAgendaItems?.[0]!.snippet).toContain("hiring freeze");
+  });
+
+  test("matches an author name with diacritics", async () => {
+    const result = await searchMeetings({ query: "muller" }, meetingFixtureClient());
+    expect(result.elements.some((e) => e.meeting.id === 1)).toBe(true);
+  });
+
+  test("exact mode finds nothing for a typo", async () => {
+    const result = await searchMeetings(
+      { query: "budgt aproval", matchMode: "exact" },
+      meetingFixtureClient()
+    );
+    expect(result.elements).toHaveLength(0);
+  });
+
+  test("exact mode still finds a literal substring", async () => {
+    const result = await searchMeetings(
+      { query: "Q3 budget", matchMode: "exact" },
+      meetingFixtureClient()
+    );
+    expect(result.elements[0]!.meeting.id).toBe(1);
+  });
+
+  test("reports degradation rather than silently returning fewer results", async () => {
+    const client = {
+      get: async (path: string) => {
+        if (path.includes("agenda_items")) {
+          throw new OpenProjectError("server error", { statusCode: 500 });
+        }
+        return meetingFixtureClient().get(path);
+      },
+    } as unknown as OpenProjectClient;
+
+    const result = await searchMeetings({ query: "budget" }, client);
+    expect(result.degraded).toBe(true);
+    expect(result.enrichmentFailures).toBeGreaterThan(0);
+  });
+
+  test("propagates an auth failure instead of reporting no results", async () => {
+    const client = {
+      get: async (path: string) => {
+        if (path.includes("agenda_items")) {
+          throw new OpenProjectAuthenticationError();
+        }
+        return meetingFixtureClient().get(path);
+      },
+    } as unknown as OpenProjectClient;
+
+    await expect(searchMeetings({ query: "budget" }, client)).rejects.toThrow(
+      OpenProjectAuthenticationError
+    );
   });
 });
