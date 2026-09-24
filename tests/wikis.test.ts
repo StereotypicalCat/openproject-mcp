@@ -729,3 +729,118 @@ describe("Wiki Fuzzy Search", () => {
     expect(results).toHaveLength(0);
   });
 });
+
+describe("Wiki Error Propagation", () => {
+  beforeEach(() => {
+    clearWikiCache();
+  });
+
+  function pageWithFailingAttachments(error: unknown) {
+    return {
+      baseUrl: "http://localhost:8080",
+      getCacheKey: () => "attachments-test",
+      get: async (path: string) => {
+        if (path.endsWith("/attachments")) {
+          throw error;
+        }
+        if (path === "/api/v3/wiki_pages/1") {
+          return {
+            _type: "WikiPage",
+            id: 1,
+            title: "Project Wiki",
+            _links: { project: { href: "/api/v3/projects/1", title: "Demo Project" } },
+          };
+        }
+        throw new OpenProjectError("not found", { statusCode: 404 });
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  test("getWikiPage propagates a rate limit from the attachments fetch", async () => {
+    await expect(
+      getWikiPage(
+        1,
+        pageWithFailingAttachments(new OpenProjectError("rate limited", { statusCode: 429 }))
+      )
+    ).rejects.toThrow("rate limited");
+  });
+
+  test("getWikiPage propagates an authentication failure from the attachments fetch", async () => {
+    await expect(
+      getWikiPage(1, pageWithFailingAttachments(new OpenProjectAuthenticationError()))
+    ).rejects.toThrow(OpenProjectAuthenticationError);
+  });
+
+  test("getWikiPage still degrades to an empty attachment list on a non-fatal failure", async () => {
+    const page = await getWikiPage(
+      1,
+      pageWithFailingAttachments(new OpenProjectError("boom", { statusCode: 500 }))
+    );
+    expect(page.id).toBe(1);
+    expect(page.attachments).toEqual([]);
+  });
+
+  test("a discovery scan that errors through every probe is not marked complete", async () => {
+    // Phase 1: every wiki page probe fails with a 500. Nothing is cached, and
+    // the 404 cutoff never trips, so discovery did not actually complete.
+    let failEverything = true;
+    const client = {
+      baseUrl: "http://localhost:8080",
+      getCacheKey: () => "flaky-tenant",
+      get: async (path: string) => {
+        if (path === "/api/v3/wiki_page_links") {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        if (failEverything) {
+          throw new OpenProjectError("upstream exploded", { statusCode: 500 });
+        }
+        if (path === "/api/v3/wiki_pages/1") {
+          return {
+            _type: "WikiPage",
+            id: 1,
+            title: "Deployment Runbook",
+            text: { raw: "How to deploy the service" },
+            _links: { project: { href: "/api/v3/projects/1", title: "Demo Project" } },
+          };
+        }
+        if (path === "/api/v3/wiki_pages/1/attachments") {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        throw new OpenProjectError("not found", { statusCode: 404 });
+      },
+    } as unknown as OpenProjectClient;
+
+    const first = await searchWikiPages({ query: "deployment" }, client);
+    expect(first).toEqual([]);
+
+    // Phase 2: the instance recovers. Discovery must run again rather than
+    // short-circuiting on a cache that was wrongly marked complete and
+    // returning [] for the life of the process.
+    failEverything = false;
+    const second = await searchWikiPages({ query: "deployment" }, client);
+    expect(second.map((page) => page.id)).toEqual([1]);
+  });
+
+  test("a genuinely empty wiki is marked complete and is not re-probed", async () => {
+    let probes = 0;
+    const client = {
+      baseUrl: "http://localhost:8080",
+      getCacheKey: () => "empty-tenant",
+      get: async (path: string) => {
+        if (path === "/api/v3/wiki_page_links") {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        probes++;
+        throw new OpenProjectError("not found", { statusCode: 404 });
+      },
+    } as unknown as OpenProjectClient;
+
+    expect(await searchWikiPages({ query: "anything" }, client)).toEqual([]);
+    const afterFirst = probes;
+    // The 404 cutoff is a real completion signal: five consecutive misses.
+    expect(afterFirst).toBe(5);
+
+    expect(await searchWikiPages({ query: "anything" }, client)).toEqual([]);
+    expect(probes).toBe(afterFirst);
+  });
+});

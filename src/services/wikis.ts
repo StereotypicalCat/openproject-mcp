@@ -11,6 +11,7 @@ import { extractIdFromHref, extractRawText } from "../client/hal-parser.ts";
 import type { HalCollection, HalLink, HalResource } from "../client/types.ts";
 import { resolveClient, resolveProjectId } from "./helper.ts";
 import { rankRecords, type FieldSpec, type MatchMode } from "../search/rank.ts";
+import { isFatalSearchError } from "../search/pipeline.ts";
 
 export interface WikiPageAttachment {
   id: number;
@@ -216,8 +217,15 @@ export async function getWikiPage(
     if (attachmentsResponse._embedded?.elements) {
       attachments = attachmentsResponse._embedded.elements.map(normalizeWikiAttachment);
     }
-  } catch {
-    // If attachments collection cannot be retrieved, default to empty list
+  } catch (error: unknown) {
+    // A 401/403/429 here is not "this page has no attachments" — it means we
+    // could not read. Swallowing it caches (and reports) an empty attachment
+    // list as fact, and during a discovery scan eats the same rate limit once
+    // per probed page.
+    if (isFatalSearchError(error)) {
+      throw error;
+    }
+    // Otherwise (404, 500, network) degrade to an empty list.
   }
 
   const detail = normalizeWikiPageDetail(pageResource, attachments);
@@ -324,6 +332,9 @@ export async function searchWikiPages(
     const MAX_PROBE_ID = 50;
     const CONSECUTIVE_404_CUTOFF = 5;
     let consecutiveMisses = 0;
+    // True only when the scan stopped because the 404 cutoff said "the wiki
+    // ends here", as opposed to erroring its way through every probe.
+    let reachedMissCutoff = false;
 
     for (let id = 1; id <= MAX_PROBE_ID; id++) {
       try {
@@ -343,6 +354,7 @@ export async function searchWikiPages(
           consecutiveMisses++;
         }
         if (consecutiveMisses >= CONSECUTIVE_404_CUTOFF) {
+          reachedMissCutoff = true;
           break;
         }
       }
@@ -368,7 +380,18 @@ export async function searchWikiPages(
       }
     }
 
-    discoveredCacheKeys.add(cacheKey);
+    // Mark discovery complete only when it genuinely completed. If every
+    // probe failed with a 500 or a network error the cutoff never trips and
+    // nothing is cached — marking that scan "done" would short-circuit every
+    // later search for the life of the process and return [] forever.
+    // Either condition on its own is proof of a real scan: a cached page
+    // means we read the wiki, and the 404 cutoff means we read to its end
+    // (a genuinely empty wiki is 404s all the way down, and must still be
+    // marked complete or every search re-probes it).
+    const discoveryCompleted = cacheMap.size > 0 || reachedMissCutoff;
+    if (discoveryCompleted) {
+      discoveredCacheKeys.add(cacheKey);
+    }
   }
 
   // 3. Resolve target project ID if provided
