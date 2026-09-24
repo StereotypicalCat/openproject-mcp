@@ -525,8 +525,11 @@ only, and work package search matched subjects only.
 6. **No standalone activities search tool**, because OpenProject exposes
    activities only per work package. Comment text enters the work package deep
    phase instead. `openproject_list_work_package_activities` gained an optional
-   `query`/`matchMode` pair that ranks the activities it already fetched
-   client-side, at no extra API cost.
+   `query`/`matchMode` pair that filters and ranks the activities it already
+   fetched client-side, at no extra API cost. It applies the same
+   `DEFAULT_MIN_SCORE` gate as every other ranked surface, so a query narrows
+   the returned timeline to relevant entries rather than reordering the full
+   history; omitting `query` returns the complete list.
 
 ### Consequences
 
@@ -547,6 +550,21 @@ only, and work package search matched subjects only.
   section 6.2).
 - Scoring constants are tuning parameters. `tests/search/recall.test.ts` is
   the acceptance test that governs them.
+- Search response envelopes carry ranked results under `elements` only. The
+  duplicate `items` alias that non-search list functions still return is
+  omitted from `MeetingSearchPage` and `WorkPackageSearchPage`, because the
+  tool layer JSON-stringifies the whole envelope and shipping the same array
+  twice doubled the token cost of every search response.
+- `offset` on both search pages is a 1-based page number, matching the tool
+  schemas and the OpenProject API. This corrected `openproject_search_meetings`,
+  which previously sliced from item index `offset - 1` and returned a page
+  overlapping the previous one by all but a single result.
+- The candidate union for work package search runs both legs in every match
+  mode. Restricting exact mode to the server-side `subject ~` filter made
+  description- and comment-only matches unreachable precisely for the literal
+  strings (error codes, ticket refs, commit SHAs) that exact mode exists for.
+  Both legs page the candidate window in batches of 100 up to the 250 cap,
+  since OpenProject enforces a server-side maximum page size.
 
 
 

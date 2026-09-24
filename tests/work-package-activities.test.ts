@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { OpenProjectClient } from "../src/client/api-client.ts";
 import { runWithContext, type RequestContext } from "../src/context.ts";
 import { listWorkPackageActivities } from "../src/services/work-packages.ts";
+import {
+  listWorkPackageActivitiesShape,
+  listWorkPackageActivitiesTool,
+} from "../src/tools/work-packages.ts";
 
 describe("Work Package Activities Service", () => {
   test("parses activities and separates comments from field changes", async () => {
@@ -202,5 +206,57 @@ describe("Activity Ranking", () => {
       activitiesClient()
     );
     expect(result).toHaveLength(0);
+  });
+});
+
+describe("Work Package Activities query documentation", () => {
+  /**
+   * `query` does not merely reorder the timeline — rankRecords drops
+   * everything below DEFAULT_MIN_SCORE. A model told the parameter "ranks"
+   * will reason over a silently truncated history, so the schema and the tool
+   * description must both say that it filters.
+   */
+  test("the query parameter is documented as filtering, not only ranking", () => {
+    const description = listWorkPackageActivitiesShape.query.description ?? "";
+    expect(description.toLowerCase()).toContain("filter");
+    expect(description.toLowerCase()).toMatch(/not the complete history|are omitted/);
+  });
+
+  test("the tool description warns that a query narrows the timeline", () => {
+    expect(listWorkPackageActivitiesTool.description.toLowerCase()).toContain("filters");
+  });
+
+  test("a query really does drop non-matching activities", async () => {
+    const client = {
+      get: async () => ({
+        _type: "Collection",
+        _embedded: {
+          elements: [
+            {
+              id: 1,
+              version: 1,
+              createdAt: "2026-09-10T00:00:00Z",
+              comment: { raw: "Renewed the expired TLS certificate" },
+              _links: { user: { href: "/api/v3/users/4", title: "Admin" } },
+            },
+            {
+              id: 2,
+              version: 2,
+              createdAt: "2026-09-11T00:00:00Z",
+              comment: { raw: "Merged the dependency bump" },
+              _links: { user: { href: "/api/v3/users/5", title: "Dev" } },
+            },
+          ],
+        },
+      }),
+    } as unknown as OpenProjectClient;
+
+    const all = await listWorkPackageActivities({ workPackageId: 1 }, client);
+    const filtered = await listWorkPackageActivities(
+      { workPackageId: 1, query: "TLS certificate" },
+      client
+    );
+    expect(all).toHaveLength(2);
+    expect(filtered.map((a) => a.id)).toEqual([1]);
   });
 });

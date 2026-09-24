@@ -185,8 +185,11 @@ export const listWorkPackageActivitiesShape = {
     .string()
     .optional()
     .describe(
-      "Optional search text to rank activities by relevance. Matched against " +
-        "comment text and change details; tolerates typos."
+      "Optional search text. FILTERS the activity list down to relevant " +
+        "entries and ranks them by relevance — activities that do not match " +
+        "are omitted, so the returned timeline is not the complete history. " +
+        "Omit this parameter to get the full, unfiltered list. Matched " +
+        "against comment text and change details; tolerates typos."
     ),
   matchMode: z
     .enum(["fuzzy", "exact"])
@@ -227,7 +230,7 @@ export const listWorkPackageActivitiesTool: ToolDefinition<
 > = {
   name: "openproject_list_work_package_activities",
   description:
-    "Retrieve timeline activities and comments for a work package. Can optionally filter to only include user comments.",
+    "Retrieve timeline activities and comments for a work package. Can optionally filter to only include user comments. Supplying 'query' filters the timeline to relevant entries and ranks them, rather than reordering the full history.",
   parameters: listWorkPackageActivitiesShape,
   readOnly: true,
   execute: handleListWorkPackageActivities,

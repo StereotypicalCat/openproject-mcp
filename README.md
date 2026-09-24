@@ -351,9 +351,11 @@ This launches a local web UI (typically at `http://localhost:5173`) where you ca
 `openproject_search_meetings`, `openproject_search_wiki_pages`, and `openproject_search_work_packages` rank results by relevance instead of returning a flat list. They accept `matchMode: "fuzzy" | "exact"` (default `"fuzzy"`):
 
 - **`fuzzy`** (default) tolerates typos, reordered words, and partial/natural-language phrasing (e.g. "budget aproval", "what did we decide about hiring"). Results are ranked and each one carries a `score` (0..1 relevance) and `matchedFields` (which fields matched, highest-scoring first); work package and wiki page results also carry a `snippet` excerpt.
-- **`exact`** restores literal case-insensitive substring matching, byte for byte equivalent to this project's pre-fuzzy search behavior.
+- **`exact`** restores literal case-insensitive substring matching, byte for byte equivalent to this project's pre-fuzzy search behavior. Exact mode still searches descriptions, comments, and agenda content — it changes *how* text is matched, not *what* is searched.
 
-`openproject_list_work_package_activities` similarly accepts an optional `query`/`matchMode` pair to rank the activities it already fetched, at no extra API cost. `openproject_list_work_packages` is unchanged — it remains a plain filter tool (`subject` substring match only, no ranking), kept deliberately separate from the ranked `openproject_search_work_packages` tool.
+On every search tool, `offset` is a **1-based page number**, not an item index: with `pageSize: 20`, `offset: 2` returns results 21-40. Ranked results are returned under `elements`.
+
+`openproject_list_work_package_activities` similarly accepts an optional `query`/`matchMode` pair, applied to the activities it already fetched at no extra API cost. Note that `query` **filters as well as ranks**: activities scoring below the relevance threshold are dropped, so the response is a relevant subset of the timeline rather than the full history reordered. Omit `query` to retrieve the complete activity list. `openproject_list_work_packages` is unchanged — it remains a plain filter tool (`subject` substring match only, no ranking), kept deliberately separate from the ranked `openproject_search_work_packages` tool.
 
 ### Projects
 - `openproject_list_projects`: List projects with pagination (`offset`, `pageSize`), sorting (`sortBy`), and filtering.
@@ -362,7 +364,7 @@ This launches a local web UI (typically at `http://localhost:5173`) where you ca
 ### Work Packages & Activities
 - `openproject_list_work_packages`: Query work packages with high-level filters (`projectId`, `status`, `typeId`, `assigneeId`, `priorityId`, `subject`, `pageSize`, `offset`) or custom JSON filter expressions.
 - `openproject_get_work_package`: Retrieve detailed information for a specific work package by ID (`workPackageId: 38`), including description, type, status, priority, author, dates, parent, and children.
-- `openproject_list_work_package_activities`: Retrieve timeline history, field change logs, and discussions for a work package (`workPackageId: 38`), with optional `onlyComments` filtering and optional `query`/`matchMode` relevance ranking.
+- `openproject_list_work_package_activities`: Retrieve timeline history, field change logs, and discussions for a work package (`workPackageId: 38`), with optional `onlyComments` filtering and an optional `query`/`matchMode` pair that filters the timeline to relevant entries and ranks them (non-matching activities are omitted).
 - `openproject_search_work_packages`: Ranked fuzzy search across work package subjects, descriptions, and comments (`query: "budget aproval"`, optional `projectId`, `status`, `matchMode`, `offset`, `pageSize`). Returns `score`, `matchedFields`, and a `snippet` per result, plus `degraded`/`enrichmentFailures` if some deep content couldn't be fetched.
 
 ### Meetings
