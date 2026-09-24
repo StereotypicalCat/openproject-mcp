@@ -693,7 +693,7 @@ describe("Live Container Integration (Domain Services)", () => {
     expect(firstWp.subject).toBeDefined();
 
     const searchRes = await domainServices.searchWorkPackages("MCP", { projectId: "mcp-test-project" }, client);
-    expect(searchRes.items.length).toBeGreaterThan(0);
+    expect(searchRes.elements.length).toBeGreaterThan(0);
   });
 
   runLiveTests("live: queries service operations", async () => {
@@ -941,3 +941,286 @@ describe("Work Package Fuzzy Search", () => {
   });
 });
 
+
+/**
+ * These fixtures deliberately HONOUR the server-side `subject ~` filter.
+ * `workPackageFixtureClient` above returns every element for any collection
+ * request, which is why the exact-mode candidate starvation bug was invisible
+ * to the suite: a subject-filtered leg that returns the whole corpus looks
+ * identical to a broad leg.
+ */
+describe("Work Package Search Candidate Union", () => {
+  interface FixtureElement {
+    _type: string;
+    id: number;
+    subject: string;
+    _links: Record<string, unknown>;
+    updatedAt: string;
+  }
+
+  function makeElement(id: number, subject: string, updatedAt: string): FixtureElement {
+    return {
+      _type: "WorkPackage",
+      id,
+      subject,
+      _links: {
+        type: { title: "Bug" },
+        status: { title: "New" },
+        project: { href: "/api/v3/projects/1", title: "Demo project" },
+      },
+      updatedAt,
+    };
+  }
+
+  /** Reads the `subject ~` value out of the serialized filter payload. */
+  function subjectFilterOf(query?: Record<string, unknown>): string | undefined {
+    const raw = query?.filters;
+    if (typeof raw !== "string") return undefined;
+    const filters = JSON.parse(raw) as Array<Record<string, { values?: string[] }>>;
+    for (const filter of filters) {
+      const subject = filter.subject;
+      if (subject) return subject.values?.[0];
+    }
+    return undefined;
+  }
+
+  /**
+   * A fixture client that applies the subject filter server-side, the way a
+   * real OpenProject instance does.
+   */
+  function subjectAwareClient(
+    elements: FixtureElement[],
+    deep: Record<number, { description?: string; comment?: string }>,
+    calls: Array<{ path: string; query?: Record<string, unknown> }> = []
+  ) {
+    return {
+      get: async (path: string, query?: Record<string, unknown>) => {
+        calls.push({ path, query });
+
+        if (path.startsWith("work_packages/") || path.startsWith("/api/v3/work_packages/")) {
+          const id = Number(path.match(/work_packages\/(\d+)/)?.[1] ?? NaN);
+          if (path.includes("activities")) {
+            const comment = deep[id]?.comment;
+            return {
+              _type: "Collection",
+              _embedded: {
+                elements: comment
+                  ? [
+                      {
+                        id: id * 10,
+                        version: 1,
+                        createdAt: "2026-09-11T00:00:00Z",
+                        comment: { raw: comment },
+                        _links: { user: { href: "/api/v3/users/4", title: "Admin" } },
+                      },
+                    ]
+                  : [],
+              },
+            };
+          }
+          const match = elements.find((e) => e.id === id);
+          return { ...match, description: { raw: deep[id]?.description ?? "" } };
+        }
+
+        const subject = subjectFilterOf(query);
+        const matched =
+          subject === undefined
+            ? elements
+            : elements.filter((e) =>
+                e.subject.toLowerCase().includes(subject.toLowerCase())
+              );
+
+        return {
+          _type: "Collection",
+          total: matched.length,
+          count: matched.length,
+          pageSize: 100,
+          offset: 1,
+          _embedded: { elements: matched },
+        };
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  const elements = [
+    makeElement(1, "Fix login redirect", "2026-09-10T00:00:00Z"),
+    makeElement(2, "Update dependencies", "2026-09-11T00:00:00Z"),
+  ];
+  const deep = {
+    1: { description: "Session cookie is dropped" },
+    2: { comment: "Blocked by error ERR_TLS_EXPIRED on deploy" },
+  };
+
+  test("the subject-aware fixture really does filter (guards the tests below)", async () => {
+    const result = await searchWorkPackages(
+      "Update dependencies",
+      { matchMode: "exact" },
+      subjectAwareClient(elements, deep)
+    );
+    expect(result.elements.map((e) => e.workPackage.id)).toEqual([2]);
+  });
+
+  test("exact mode finds a comment-only match the subject filter cannot return", async () => {
+    const result = await searchWorkPackages(
+      "ERR_TLS_EXPIRED",
+      { matchMode: "exact" },
+      subjectAwareClient(elements, deep)
+    );
+    expect(result.elements).toHaveLength(1);
+    expect(result.elements[0]!.workPackage.id).toBe(2);
+    expect(result.elements[0]!.matchedFields).toContain("comments");
+  });
+
+  test("exact mode finds a description-only match the subject filter cannot return", async () => {
+    const result = await searchWorkPackages(
+      "Session cookie",
+      { matchMode: "exact" },
+      subjectAwareClient(elements, deep)
+    );
+    expect(result.elements).toHaveLength(1);
+    expect(result.elements[0]!.workPackage.id).toBe(1);
+    expect(result.elements[0]!.matchedFields).toContain("description");
+  });
+
+  test("exact mode still issues both the precise and the broad candidate leg", async () => {
+    const calls: Array<{ path: string; query?: Record<string, unknown> }> = [];
+    await searchWorkPackages(
+      "login",
+      { matchMode: "exact" },
+      subjectAwareClient(elements, deep, calls)
+    );
+    const collectionCalls = calls.filter((c) => c.path === "work_packages");
+    expect(collectionCalls.some((c) => subjectFilterOf(c.query) === "login")).toBe(true);
+    expect(collectionCalls.some((c) => subjectFilterOf(c.query) === undefined)).toBe(true);
+  });
+
+  test("never requests a page size above the documented 100 maximum", async () => {
+    const calls: Array<{ path: string; query?: Record<string, unknown> }> = [];
+    await searchWorkPackages("login", {}, subjectAwareClient(elements, deep, calls));
+    const pageSizes = calls
+      .filter((c) => c.path === "work_packages")
+      .map((c) => Number(c.query?.pageSize));
+    expect(pageSizes.length).toBeGreaterThan(0);
+    for (const pageSize of pageSizes) {
+      expect(pageSize).toBeLessThanOrEqual(100);
+    }
+  });
+
+  test("pages the candidate window until the server-reported total is collected", async () => {
+    const requestedOffsets: number[] = [];
+    // 150 candidates behind a server that hands back 100 per page: a single
+    // pageSize=250 request would have been capped at 100 by a real instance.
+    const corpus = Array.from({ length: 150 }, (_, i) =>
+      makeElement(i + 1, `Candidate ${i + 1}`, "2026-09-10T00:00:00Z")
+    );
+
+    const client = {
+      get: async (path: string, query?: Record<string, unknown>) => {
+        if (path.startsWith("work_packages/") || path.startsWith("/api/v3/work_packages/")) {
+          const id = Number(path.match(/work_packages\/(\d+)/)?.[1] ?? NaN);
+          if (path.includes("activities")) {
+            return { _type: "Collection", _embedded: { elements: [] } };
+          }
+          return { ...corpus.find((e) => e.id === id), description: { raw: "" } };
+        }
+        const pageSize = Number(query?.pageSize ?? 20);
+        expect(pageSize).toBeLessThanOrEqual(100);
+        const offset = Number(query?.offset ?? 1);
+        if (subjectFilterOf(query) === undefined) {
+          requestedOffsets.push(offset);
+        }
+        const start = (offset - 1) * pageSize;
+        const page = corpus.slice(start, start + pageSize);
+        return {
+          _type: "Collection",
+          total: corpus.length,
+          count: page.length,
+          pageSize,
+          offset,
+          _embedded: { elements: page },
+        };
+      },
+    } as unknown as OpenProjectClient;
+
+    const result = await searchWorkPackages("Candidate 137", {}, client);
+    expect(requestedOffsets).toEqual([1, 2]);
+    // Candidate 137 lives on the second page; without paging it is unreachable.
+    expect(result.elements[0]!.workPackage.id).toBe(137);
+  });
+});
+
+describe("Work Package Search Response Shape", () => {
+  function pagedFixtureClient(count: number) {
+    const elements = Array.from({ length: count }, (_, i) => ({
+      _type: "WorkPackage",
+      id: i + 1,
+      subject: `Release checklist item ${i + 1}`,
+      _links: {
+        type: { title: "Task" },
+        status: { title: "New" },
+        project: { href: "/api/v3/projects/1", title: "Demo project" },
+      },
+      updatedAt: "2026-09-10T00:00:00Z",
+    }));
+
+    return {
+      get: async (path: string) => {
+        if (path.startsWith("work_packages/") || path.startsWith("/api/v3/work_packages/")) {
+          const id = Number(path.match(/work_packages\/(\d+)/)?.[1] ?? NaN);
+          if (path.includes("activities")) {
+            return { _type: "Collection", _embedded: { elements: [] } };
+          }
+          return { ...elements.find((e) => e.id === id), description: { raw: "" } };
+        }
+        return {
+          _type: "Collection",
+          total: elements.length,
+          count: elements.length,
+          pageSize: 100,
+          offset: 1,
+          _embedded: { elements },
+        };
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  test("offset is a page number: page 2 does not overlap page 1", async () => {
+    const client = pagedFixtureClient(12);
+    const page1 = await searchWorkPackages(
+      "Release checklist item",
+      { offset: 1, pageSize: 5 },
+      client
+    );
+    const page2 = await searchWorkPackages(
+      "Release checklist item",
+      { offset: 2, pageSize: 5 },
+      client
+    );
+
+    const whole = await searchWorkPackages(
+      "Release checklist item",
+      { offset: 1, pageSize: 100 },
+      client
+    );
+    const allIds = whole.elements.map((e) => e.workPackage.id);
+    const ids1 = page1.elements.map((e) => e.workPackage.id);
+    const ids2 = page2.elements.map((e) => e.workPackage.id);
+
+    expect(allIds).toHaveLength(12);
+    expect(ids1).toEqual(allIds.slice(0, 5));
+    // The bug returned allIds.slice(1, 6) here — four of five items repeated.
+    expect(ids2).toEqual(allIds.slice(5, 10));
+    expect(ids1.filter((id) => ids2.includes(id))).toEqual([]);
+  });
+
+  test("does not ship the result array twice", async () => {
+    const result = await searchWorkPackages(
+      "Release checklist item",
+      {},
+      pagedFixtureClient(3)
+    );
+    expect(result.elements).toHaveLength(3);
+    expect(Object.keys(result)).not.toContain("items");
+    expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty("items");
+  });
+});

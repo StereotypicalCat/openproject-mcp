@@ -87,7 +87,13 @@ export interface WorkPackageSearchResult {
   snippet?: string;
 }
 
-export interface WorkPackageSearchPage extends PaginatedResult<WorkPackageSearchResult> {
+/**
+ * Search results are exposed under `elements` only. `items` is deliberately
+ * omitted: the tool layer JSON-stringifies this whole object, so carrying the
+ * same array twice doubles the token cost of every search response.
+ */
+export interface WorkPackageSearchPage
+  extends Omit<PaginatedResult<WorkPackageSearchResult>, "items"> {
   elements: WorkPackageSearchResult[];
   degraded: boolean;
   enrichmentFailures: number;
@@ -100,6 +106,13 @@ interface WorkPackageDeepContent {
 }
 
 const MAX_WORK_PACKAGE_CANDIDATES = 250;
+/**
+ * OpenProject enforces a server-side maximum page size, and every tool shape
+ * in this repo caps `pageSize` at 100. Asking for 250 in a single request
+ * therefore risks silently receiving fewer candidates than the code assumes,
+ * so the candidate window is paged in batches instead.
+ */
+const CANDIDATE_BATCH_SIZE = 100;
 
 /**
  * Fetches the description and comment text for one work package.
@@ -154,31 +167,63 @@ export async function searchWorkPackages(
   // results found".
   const listCandidates = async (
     params: ListWorkPackagesParams
-  ): Promise<{ items: WorkPackageSummary[] }> => {
+  ): Promise<{ items: WorkPackageSummary[]; total: number }> => {
     try {
       return await listWorkPackages(params, opClient);
     } catch (error: unknown) {
       if (isFatalSearchError(error)) {
         throw error;
       }
-      return { items: [] };
+      return { items: [], total: 0 };
     }
   };
 
+  /**
+   * Accumulates one candidate leg in server-acceptable batches, up to the
+   * shared 250 cap. Stops once the server says the collection is exhausted
+   * (`collected.length >= total`) or hands back a short page.
+   */
+  const collectLeg = async (
+    params: ListWorkPackagesParams
+  ): Promise<WorkPackageSummary[]> => {
+    const collected: WorkPackageSummary[] = [];
+    let offset = 1;
+
+    while (collected.length < MAX_WORK_PACKAGE_CANDIDATES) {
+      const page = await listCandidates({
+        ...params,
+        pageSize: CANDIDATE_BATCH_SIZE,
+        offset,
+      });
+
+      if (page.items.length === 0) {
+        break;
+      }
+      collected.push(...page.items);
+
+      if (collected.length >= page.total || page.items.length < CANDIDATE_BATCH_SIZE) {
+        break;
+      }
+      offset += 1;
+    }
+
+    return collected.slice(0, MAX_WORK_PACKAGE_CANDIDATES);
+  };
+
+  // Both legs run in every match mode. Exact mode must not be restricted to
+  // the server-side subject filter: the literal strings a caller reaches for
+  // exact mode with (error codes, ticket refs, commit SHAs) overwhelmingly
+  // live in descriptions and comments, which only the broad leg can surface.
   const fetchCandidates = async (): Promise<WorkPackageSummary[]> => {
     const [precise, broad] = await Promise.all([
-      listCandidates({ ...sharedFilters, subject: query, pageSize: MAX_WORK_PACKAGE_CANDIDATES }),
-      matchMode === "exact"
-        ? Promise.resolve({ items: [] as WorkPackageSummary[] })
-        : listCandidates({
-            ...sharedFilters,
-            pageSize: MAX_WORK_PACKAGE_CANDIDATES,
-            sortBy: '[["updatedAt","desc"]]',
-          }),
+      collectLeg({ ...sharedFilters, subject: query }),
+      collectLeg({ ...sharedFilters, sortBy: '[["updatedAt","desc"]]' }),
     ]);
 
+    // Precise leg first: on a collision the exact subject match wins the slot,
+    // so exact matches always survive the 250 cap.
     const byId = new Map<number, WorkPackageSummary>();
-    for (const item of [...precise.items, ...broad.items]) {
+    for (const item of [...precise, ...broad]) {
       byId.set(item.id, item);
     }
     return Array.from(byId.values()).slice(0, MAX_WORK_PACKAGE_CANDIDATES);
@@ -213,9 +258,11 @@ export async function searchWorkPackages(
     snippet: entry.matches[0]?.snippet,
   }));
 
+  // `offset` is a 1-based PAGE number, as the tool schema documents and as the
+  // rest of this codebase and the OpenProject API treat it — not an item index.
   const offset = options?.offset ?? 1;
   const pageSize = options?.pageSize ?? 20;
-  const startIndex = Math.max(0, offset - 1);
+  const startIndex = Math.max(0, offset - 1) * pageSize;
   const paged = all.slice(startIndex, startIndex + pageSize);
 
   return {
@@ -224,7 +271,6 @@ export async function searchWorkPackages(
     pageSize,
     offset,
     elements: paged,
-    items: paged,
     degraded: result.degraded,
     enrichmentFailures: result.enrichmentFailures,
   };
