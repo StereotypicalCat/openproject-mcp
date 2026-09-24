@@ -844,3 +844,94 @@ describe("Wiki Error Propagation", () => {
     expect(probes).toBe(afterFirst);
   });
 });
+
+describe("Wiki Discovery Completion With A Primed Cache", () => {
+  beforeEach(() => {
+    clearWikiCache();
+  });
+
+  const CACHE_KEY = "primed-tenant";
+
+  const pages: Record<number, { title: string; text: string }> = {
+    1: { title: "Onboarding", text: "How to get started" },
+    2: { title: "Deployment Runbook", text: "How to deploy the service" },
+  };
+
+  /** Serves the fixture wiki. Shares a cache key with the failing client. */
+  function healthyClient(probedIds: number[] = []) {
+    return {
+      baseUrl: "http://localhost:8080",
+      getCacheKey: () => CACHE_KEY,
+      get: async (path: string) => {
+        if (path === "/api/v3/wiki_page_links") {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        const id = Number(path.match(/wiki_pages\/(\d+)/)?.[1] ?? NaN);
+        if (path.endsWith("/attachments")) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        probedIds.push(id);
+        const page = pages[id];
+        if (!page) {
+          throw new OpenProjectError("not found", { statusCode: 404 });
+        }
+        return {
+          _type: "WikiPage",
+          id,
+          title: page.title,
+          text: { raw: page.text },
+          _links: { project: { href: "/api/v3/projects/1", title: "Demo Project" } },
+        };
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  /** Same tenant, but every wiki page probe fails non-fatally. */
+  function outageClient(probedIds: number[] = []) {
+    return {
+      baseUrl: "http://localhost:8080",
+      getCacheKey: () => CACHE_KEY,
+      get: async (path: string) => {
+        if (path === "/api/v3/wiki_page_links") {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        const id = Number(path.match(/wiki_pages\/(\d+)/)?.[1] ?? NaN);
+        probedIds.push(id);
+        throw new OpenProjectError("upstream exploded", { statusCode: 500 });
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  /**
+   * `getWikiPage` writes into the same tenant-wide cache map that discovery
+   * populates, so "get a wiki page, then search" — an entirely ordinary LLM
+   * tool sequence — leaves the map non-empty before the probe loop has issued
+   * a single request. Judging completion on absolute cache size therefore
+   * lets an all-errors scan inherit that entry and mark itself complete, and
+   * wiki search then returns [] for the life of the process.
+   */
+  test("a primed cache does not let an all-errors scan mark discovery complete", async () => {
+    // 1. Prime the tenant cache with one successful single-page fetch.
+    const primed = await getWikiPage(1, healthyClient());
+    expect(primed.title).toBe("Onboarding");
+
+    // 2. A discovery scan in which every probe fails non-fatally. It caches
+    //    nothing new and the 404 cutoff never trips, so discovery did NOT
+    //    complete — even though the map is non-empty thanks to step 1.
+    const outageProbes: number[] = [];
+    const duringOutage = await searchWikiPages({ query: "deployment" }, outageClient(outageProbes));
+    expect(outageProbes.length).toBeGreaterThan(0);
+    expect(duringOutage).toEqual([]);
+
+    // 3. The instance recovers. Discovery must run again rather than
+    //    short-circuiting on a cache that was wrongly marked complete.
+    const recoveryProbes: number[] = [];
+    const afterRecovery = await searchWikiPages(
+      { query: "deployment" },
+      healthyClient(recoveryProbes)
+    );
+
+    expect(recoveryProbes.length).toBeGreaterThan(0);
+    expect(afterRecovery.map((page) => page.id)).toEqual([2]);
+  });
+});

@@ -295,6 +295,15 @@ export async function searchWikiPages(
   }
 
   if (needsDiscovery) {
+    // `cacheMap` is the tenant-wide map that getWikiPage ALSO writes to on
+    // every single-page fetch, so it is not empty just because discovery has
+    // not run: one prior openproject_get_wiki_page call on this cache key
+    // leaves an entry behind. Completion must therefore be judged on growth
+    // during this scan, not on absolute size — otherwise "get a page, then
+    // search" (an ordinary LLM tool sequence) lets an all-errors scan inherit
+    // that entry and mark itself complete.
+    const cachedBefore = cacheMap.size;
+
     // 1. Check wiki_page_links to collect referenced wiki page IDs
     const discoveredIds = new Set<number>();
     try {
@@ -382,13 +391,13 @@ export async function searchWikiPages(
 
     // Mark discovery complete only when it genuinely completed. If every
     // probe failed with a 500 or a network error the cutoff never trips and
-    // nothing is cached — marking that scan "done" would short-circuit every
-    // later search for the life of the process and return [] forever.
-    // Either condition on its own is proof of a real scan: a cached page
-    // means we read the wiki, and the 404 cutoff means we read to its end
-    // (a genuinely empty wiki is 404s all the way down, and must still be
-    // marked complete or every search re-probes it).
-    const discoveryCompleted = cacheMap.size > 0 || reachedMissCutoff;
+    // this scan caches nothing — marking that scan "done" would short-circuit
+    // every later search for the life of the process and return [] forever.
+    // Either condition on its own is proof of a real scan: a page cached BY
+    // THIS SCAN means we read the wiki, and the 404 cutoff means we read to
+    // its end (a genuinely empty wiki is 404s all the way down, and must
+    // still be marked complete or every search re-probes it).
+    const discoveryCompleted = cacheMap.size > cachedBefore || reachedMissCutoff;
     if (discoveryCompleted) {
       discoveredCacheKeys.add(cacheKey);
     }
