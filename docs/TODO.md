@@ -125,6 +125,27 @@
   - [x] Added live OpenProject 17 container integration tests in `tests/services.test.ts` and `tests/mcp-server.test.ts`.
   - [x] Recorded [ADR-018](DECISIONS.md#adr-018-add-meetings-wikis-and-activities-tools-with-smart-wiki-discovery-and-deep-meeting-search) and updated [ARCHITECTURE.md](ARCHITECTURE.md), [TODO.md](TODO.md), and [README.md](../README.md).
 
+- [x] **Task 10: Fuzzy Search by Default (19 Tools Total)**
+  - [x] Implemented a pure, zero-dependency fuzzy-matching unit in `src/search/` (`tokenize.ts`, `score.ts`, `snippet.ts`, `rank.ts`, `pipeline.ts`), with no I/O and no module-level mutable state.
+  - [x] Made fuzzy matching the default across all search tools via an optional `matchMode: "fuzzy" | "exact"` parameter; `"exact"` reproduces the previous substring-containment behavior byte for byte.
+  - [x] Widened content coverage: wiki page body text, work package descriptions and comments, and meeting participants and project names are now searchable, not just titles/subjects.
+  - [x] Added `openproject_search_work_packages`, exposing the previously tool-unreachable `searchWorkPackages` service helper as a ranked search tool over subjects, descriptions, and comments.
+  - [x] Added optional `query`/`matchMode` ranking to `openproject_list_work_package_activities` (ranks already-fetched activities client-side, no extra API cost).
+  - [x] Fixed two live bugs: a `.catch(() => undefined)` in meeting search that turned an expired token into a silent "no results found", and an unbounded `Promise.all` over up to 250 candidates in meeting search, replaced by the bounded two-phase pipeline (25-item enrichment window, concurrency 8).
+  - [x] Added `tests/search/` unit tests (`tokenize`, `score`, `snippet`, `rank`, `pipeline`) and a recall suite (`tests/search/recall.test.ts`) covering realistic natural-language and misspelled queries.
+  - [x] Recorded [ADR-019](DECISIONS.md#adr-019-fuzzy-search-by-default-with-a-hand-rolled-zero-dependency-scorer) and updated [ARCHITECTURE.md](ARCHITECTURE.md), [TODO.md](TODO.md), and [README.md](../README.md).
+
+### Known Limitations (Accepted)
+
+- **Two-phase recall ceiling**: A record whose only match is in deep content (a work package description/comment, a meeting agenda note or outcome) is findable only if it lands in the 25-item enrichment window (top-by-shallow-score, backfilled by recency). Beyond that window, deep-only matches are missed. See `src/search/pipeline.ts` (`DEFAULT_ENRICH_LIMIT`).
+- **Wiki discovery probe window**: `searchWikiPages` builds its cache by probing wiki page IDs 1..50 with a 5-consecutive-miss cutoff. Pages beyond that window, or past a gap of five consecutive deleted/missing IDs, are invisible to search regardless of ranking quality. See `src/services/wikis.ts`.
+
+### Follow-ups (Tracked, Out of This Plan's Scope)
+
+- [ ] `getMeeting` in `src/services/meetings.ts` still swallows auth errors via a `.catch(() => undefined)` on its agenda-item fetch (same bug class fixed for `searchMeetings`). An expired token can still surface as a silently empty meeting detail on that path.
+- [ ] `tests/search/recall.test.ts` under-tests ranking-under-competition: most cases have only one corpus document with any lexical overlap, so the suite largely proves "clears the minScore threshold" rather than "ranks the right document above plausible near-misses". Widening the corpus with near-miss documents would strengthen it.
+- [ ] `SearchWorkPackagesOptions.typeId` / `assigneeId` (in `src/services/work-packages.ts`) are unreachable from the MCP tool — `searchWorkPackagesShape` in `src/tools/work-packages.ts` never exposes them. Dead surface area worth trimming or wiring up.
+
 ---
 
 ## 3. Backlog & Future Phases
@@ -136,6 +157,11 @@
   - [x] Meetings listing, detail inspection, and deep agenda search.
   - [x] Wiki pages retrieval, smart cached discovery search, and work package links.
   - [x] Work package activities and comments filtering.
+- [x] **Phase 3.5: Fuzzy Search by Default (Completed - 19 Tools Total)**
+  - [x] Zero-dependency fuzzy scorer (`src/search/`) applied by default across all search tools, with `matchMode: "exact"` opt-out.
+  - [x] Widened content coverage (wiki bodies, work package descriptions/comments, meeting participants/project names).
+  - [x] New `openproject_search_work_packages` tool; ranked activities via `openproject_list_work_package_activities`.
+  - [x] Two known, accepted limitations recorded above (two-phase recall ceiling, wiki discovery probe window).
 - [ ] **Phase 2: Mutating Operations**
   - [ ] Create work package tool (`openproject_create_work_package`).
   - [ ] Update work package tool (`openproject_update_work_package`).

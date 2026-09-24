@@ -64,12 +64,12 @@ The system is organized into four modular layers:
 ### 2.2. Domain Services / Tool Providers
 Domain services map MCP tool calls to concrete business logic and OpenProject API operations:
 - **Projects Service**: Listing accessible projects, retrieving project details, and fetching project-level schemas.
-- **Work Packages Service**: Listing work packages with filters, searching by text or ID, retrieving work package details, inspecting relations, and browsing work package timeline activities and comments.
+- **Work Packages Service**: Listing work packages with filters, retrieving work package details, inspecting relations, browsing work package timeline activities and comments (optionally ranked by relevance), and ranked fuzzy search across subjects, descriptions, and comments via the two-phase pipeline.
 - **Queries Service**: Listing saved queries (views) configured in OpenProject and executing them.
 - **Metadata & Taxonomies Service**: Retrieving statuses, work package types, priorities, categories, versions, and users to enable LLMs to construct valid queries and interpret responses.
 - **OpenAPI Introspection Service**: Dynamic API v3 schema introspection, endpoint parameter schemas, tag discovery, and model definitions with in-memory caching.
-- **Meetings Service**: Listing and filtering meetings (upcoming/past), retrieving meeting details with structured agenda items, sections, and outcomes, and deep keyword search across meeting titles, locations, and agenda item notes.
-- **Wikis Service**: Retrieving wiki pages with embedded attachments, smart discovery search across wiki pages using cached harvesting and consecutive 404 cutoff, and listing wiki page links to work packages.
+- **Meetings Service**: Listing and filtering meetings (upcoming/past), retrieving meeting details with structured agenda items, sections, and outcomes, and ranked fuzzy search across meeting titles, locations, project and author names, agenda item titles and notes, outcomes, and participant names.
+- **Wikis Service**: Retrieving wiki pages with embedded attachments, ranked fuzzy search across page titles and body text using cached discovery harvesting and a consecutive 404 cutoff, and listing wiki page links to work packages.
 
 ### 2.3. OpenProject Client Layer
 - **HTTP Transport**: Handles HTTPS communication against the configured `OPENPROJECT_BASE_URL`.
@@ -87,7 +87,20 @@ Domain services map MCP tool calls to concrete business logic and OpenProject AP
   - `HOST`: Server bind address (or `--host <addr>`, default: `0.0.0.0`).
 - Fails fast with actionable setup advice if required credentials are missing or invalid in stdio mode.
 
-### 2.5. Read-Only Execution Mode
+### 2.5. Fuzzy Search Unit (`src/search/`)
+A pure computation unit sitting between the tools layer and the domain services layer. It performs no I/O and holds no module-level mutable state — every function takes its input as arguments and returns a value, so it cannot leak state across requests or tenants.
+
+Domain services declare *what* to search (which fields, at what relative importance, over which records); this unit decides *how well* each record matches. The split keeps the fuzzy-matching logic in one place, hand-written and unit-tested, rather than duplicated per service.
+
+- **`tokenize.ts`**: Normalizes text (NFKD diacritic stripping, lowercasing) and splits it into tokens, preserving each token's offset in the original (un-normalized) string so later stages can extract snippets. Query tokenization additionally strips English stopwords (falling back to the unfiltered tokens if that would remove everything), because coverage-based scoring would otherwise drive natural-language questions ("what did we decide about hiring") toward zero.
+- **`score.ts`**: A bounded Levenshtein distance with an early exit (the common case is a non-match, so cheap rejection matters more than a tight true distance), and `scoreField`, which turns a query's tokens and a field's text into a 0..1 score combining token coverage, edit-distance tolerance for typos, and a bonus for verbatim phrase matches.
+- **`snippet.ts`**: Extracts a short excerpt centered on the matched offsets, for showing the caller *where* a hit occurred in a long field (a wiki body, a comment).
+- **`rank.ts`**: `rankRecords<T>(records, query, fields: FieldSpec<T>[], options)` — the generic ranking entry point. A record's score is the best weighted field score (`max over fields of fieldScore * weight / maxDeclaredWeight`), not a sum, so a strong hit on one field isn't diluted by weak hits elsewhere. `matchMode: "exact"` bypasses fuzzy scoring entirely and reproduces the previous case-insensitive substring-containment behavior byte for byte, including its lack of a minimum-score gate. Ties are broken by ascending ID for deterministic ordering.
+- **`pipeline.ts`**: `searchPipeline` orchestrates a two-phase search: phase 1 ranks candidates on data already returned by a list endpoint (no extra API calls); phase 2 enriches a bounded window (default 25, see `DEFAULT_ENRICH_LIMIT`) — the top candidates by shallow score, backfilled by recency for records whose only match is in content that hasn't been fetched yet — at a bounded concurrency (default 8, `DEFAULT_CONCURRENCY`) via `mapWithConcurrency`. A record's final score is `max(shallow, deep)`. A non-fatal enrichment failure (e.g. a transient 500 on one candidate) is recorded and does not fail the whole search; a fatal one (401/403/429, via `isFatalSearchError`) propagates, so an expired token surfaces as an authentication error rather than a silent "no results found".
+
+Consumers: `searchMeetings` and `searchWorkPackages` (in `src/services/`) use the full two-phase `searchPipeline`; `searchWikiPages` and the ranked view of `listWorkPackageActivities` call `rankRecords` directly over data they already hold, since neither needs a second enrichment round-trip.
+
+### 2.6. Read-Only Execution Mode
 The server supports a dedicated read-only operating mode designed for auditing, reporting, and exploratory agent workflows:
 - **Tool Filtering**: When read-only mode is active, only read/browse/query tools are registered in the MCP tool registry. Mutating tools (creating work packages, updating attributes, logging time) are completely excluded from the tool manifest exposed to the LLM.
 - **Defense-in-Depth Guard**: In addition to tool manifest omission, the internal tool router validates whether an operation is a mutating action. Any write attempt is immediately rejected with a structured error (`SERVER_READ_ONLY: Server is operating in read-only mode. Write operations are disabled.`).
@@ -141,7 +154,7 @@ The server is architected from the ground up to support concurrent, multi-user o
 
 ---
 
-## 4. Tool Specifications (Browse & Query Scope - 18 Tools)
+## 4. Tool Specifications (Browse & Query Scope - 19 Tools)
 
 | MCP Tool Name | Description | Key Parameters |
 | :--- | :--- | :--- |
@@ -149,7 +162,8 @@ The server is architected from the ground up to support concurrent, multi-user o
 | `openproject_get_project` | Get details of a single project by ID or identifier | `projectId` (number or string identifier) |
 | `openproject_list_work_packages` | Browse work packages with filtering and pagination | `projectId`, `status`, `type`, `pageSize`, `offset`, `filters` |
 | `openproject_get_work_package` | Get full details of a specific work package | `workPackageId` (number) |
-| `openproject_list_work_package_activities` | Retrieve timeline activities and comments for a work package | `workPackageId` (number), `onlyComments` (boolean) |
+| `openproject_list_work_package_activities` | Retrieve timeline activities and comments for a work package, optionally ranked by relevance | `workPackageId` (number), `onlyComments` (boolean), `query`, `matchMode` |
+| `openproject_search_work_packages` | Ranked fuzzy search across work package subjects, descriptions, and comments | `query` (string), `projectId`, `status`, `matchMode`, `offset`, `pageSize` |
 | `openproject_list_queries` | List saved project or global queries (views) | `projectId`, `pageSize`, `offset` |
 | `openproject_get_query` | Retrieve details and results of a saved query | `queryId` (number) |
 | `openproject_list_types` | List all available work package types (Task, Bug, Milestone, etc.) | None |
@@ -159,10 +173,12 @@ The server is architected from the ground up to support concurrent, multi-user o
 | `openproject_get_openapi_spec` | Retrieve OpenProject API v3 OpenAPI specification for schema introspection | `summary`, `path`, `tag`, `schema` |
 | `openproject_list_meetings` | List and filter meetings visible to the user | `projectId`, `time`, `offset`, `pageSize` |
 | `openproject_get_meeting` | Retrieve detailed meeting information including agenda items, sections, notes, and participants | `id` (number), `includeAgendaItems` (boolean) |
-| `openproject_search_meetings` | Search across meetings and agenda items by keywords | `query` (string), `projectId`, `offset`, `pageSize` |
+| `openproject_search_meetings` | Ranked fuzzy search across meetings and agenda items by keywords | `query` (string), `projectId`, `offset`, `pageSize`, `matchMode` |
 | `openproject_get_wiki_page` | Retrieve wiki page metadata, project, and attachments by numeric ID | `id` (number) |
-| `openproject_search_wiki_pages` | Discover and search wiki pages matching keywords or project | `query`, `projectId`, `limit`, `refreshCache` |
+| `openproject_search_wiki_pages` | Ranked fuzzy search across wiki page titles and body text | `query`, `projectId`, `limit`, `refreshCache`, `matchMode` |
 | `openproject_list_wiki_page_links` | List links connecting work packages to wiki pages | `workPackageId`, `offset`, `pageSize` |
+
+All three dedicated search tools (`openproject_search_meetings`, `openproject_search_wiki_pages`, `openproject_search_work_packages`) default to `matchMode: "fuzzy"` and return each result's relevance `score` and `matchedFields`; passing `matchMode: "exact"` restores literal case-insensitive substring matching. See section 2.5 and ADR-019.
 
 ---
 
@@ -230,15 +246,22 @@ openproject-mcp/
 │   │   └── types.ts             # OpenProject API type definitions
 │   ├── config/
 │   │   └── index.ts             # Configuration loader and Zod schema
+│   ├── search/                  # Pure fuzzy-search unit (no I/O, no module-level state)
+│   │   ├── index.ts             # Barrel export
+│   │   ├── tokenize.ts          # Normalization, tokenization, stopword-aware query tokens
+│   │   ├── score.ts             # Bounded Levenshtein distance & field scoring
+│   │   ├── snippet.ts           # Match-centered excerpt extraction
+│   │   ├── rank.ts              # Generic FieldSpec<T> record ranking (fuzzy & exact modes)
+│   │   └── pipeline.ts          # Two-phase orchestration with bounded concurrency
 │   ├── services/
 │   │   ├── helper.ts            # Client and project resolution helpers
 │   │   ├── projects.ts          # Projects domain service
-│   │   ├── work-packages.ts     # Work packages & activities domain service
+│   │   ├── work-packages.ts     # Work packages, activities & ranked search domain service
 │   │   ├── queries.ts           # Queries domain service
 │   │   ├── metadata.ts          # Types, statuses, priorities, users
 │   │   ├── openapi.ts           # OpenAPI specification discovery & caching
-│   │   ├── meetings.ts          # Meetings domain service & search
-│   │   └── wikis.ts             # Wikis domain service & discovery cache
+│   │   ├── meetings.ts          # Meetings domain service & ranked search
+│   │   └── wikis.ts             # Wikis domain service, discovery cache & ranked search
 │   └── tools/
 │       ├── common.ts            # Common schemas and error formatters
 │       ├── index.ts             # Tool registration and execution wrapper
@@ -246,11 +269,12 @@ openproject-mcp/
 │       ├── openapi.ts           # MCP tool definition for OpenAPI introspection
 │       ├── projects.ts          # MCP tool definitions for projects
 │       ├── queries.ts           # MCP tool definitions for saved queries
-│       ├── work-packages.ts     # MCP tool definitions for work packages & activities
+│       ├── work-packages.ts     # MCP tool definitions for work packages, activities & search
 │       ├── meetings.ts          # MCP tool definitions for meetings
 │       └── wikis.ts             # MCP tool definitions for wikis
 ├── tests/
 │   ├── fixtures/                # HAL+JSON mock fixtures
+│   ├── search/                  # Unit tests for the src/search/ pure functions & recall suite
 │   ├── client.test.ts           # OpenProject client unit tests
 │   ├── config.test.ts           # Configuration loader unit tests
 │   ├── docker.test.ts           # Docker packaging and compose tests
@@ -277,5 +301,6 @@ openproject-mcp/
 - **Phase 1 (Completed)**: Read/browse capability for projects, work packages, queries, taxonomies, and OpenAPI introspection.
 - **Phase 4 (Completed)**: Hosted remote MCP server (HTTP/SSE transport via `Bun.serve`) with multi-tenant per-session credential scoping and Docker Compose deployment.
 - **Phase 3 Extension (Completed)**: Read-only collaboration tools across Meetings (listing, detail inspection, deep keyword search across agenda notes), Wikis (page retrieval, smart discovery search, and links), and Work Package Activities (history and comments filtering). Total catalog: 18 tools.
+- **Phase 3.5 (Completed)**: Fuzzy search by default across all search tools, via a hand-rolled zero-dependency scorer in `src/search/` (see section 2.5 and ADR-019). Widened content coverage (wiki body text, work package descriptions and comments, meeting participants and project names) and added `openproject_search_work_packages`. Total catalog: 19 tools.
 - **Phase 2 (Upcoming)**: Mutating operations (create/update work packages, add comments, log time).
 - **Phase 3 (Future)**: Attachment binary download resources.

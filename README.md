@@ -344,7 +344,16 @@ This launches a local web UI (typically at `http://localhost:5173`) where you ca
 
 ## Available MCP Tools
 
-`openproject-mcp` currently exposes 18 tools:
+`openproject-mcp` currently exposes 19 tools.
+
+### Search behaviour
+
+`openproject_search_meetings`, `openproject_search_wiki_pages`, and `openproject_search_work_packages` rank results by relevance instead of returning a flat list. They accept `matchMode: "fuzzy" | "exact"` (default `"fuzzy"`):
+
+- **`fuzzy`** (default) tolerates typos, reordered words, and partial/natural-language phrasing (e.g. "budget aproval", "what did we decide about hiring"). Results are ranked and each one carries a `score` (0..1 relevance) and `matchedFields` (which fields matched, highest-scoring first); work package and wiki page results also carry a `snippet` excerpt.
+- **`exact`** restores literal case-insensitive substring matching, byte for byte equivalent to this project's pre-fuzzy search behavior.
+
+`openproject_list_work_package_activities` similarly accepts an optional `query`/`matchMode` pair to rank the activities it already fetched, at no extra API cost. `openproject_list_work_packages` is unchanged — it remains a plain filter tool (`subject` substring match only, no ranking), kept deliberately separate from the ranked `openproject_search_work_packages` tool.
 
 ### Projects
 - `openproject_list_projects`: List projects with pagination (`offset`, `pageSize`), sorting (`sortBy`), and filtering.
@@ -353,16 +362,17 @@ This launches a local web UI (typically at `http://localhost:5173`) where you ca
 ### Work Packages & Activities
 - `openproject_list_work_packages`: Query work packages with high-level filters (`projectId`, `status`, `typeId`, `assigneeId`, `priorityId`, `subject`, `pageSize`, `offset`) or custom JSON filter expressions.
 - `openproject_get_work_package`: Retrieve detailed information for a specific work package by ID (`workPackageId: 38`), including description, type, status, priority, author, dates, parent, and children.
-- `openproject_list_work_package_activities`: Retrieve timeline history, field change logs, and discussions for a work package (`workPackageId: 38`), with optional `onlyComments` filtering.
+- `openproject_list_work_package_activities`: Retrieve timeline history, field change logs, and discussions for a work package (`workPackageId: 38`), with optional `onlyComments` filtering and optional `query`/`matchMode` relevance ranking.
+- `openproject_search_work_packages`: Ranked fuzzy search across work package subjects, descriptions, and comments (`query: "budget aproval"`, optional `projectId`, `status`, `matchMode`, `offset`, `pageSize`). Returns `score`, `matchedFields`, and a `snippet` per result, plus `degraded`/`enrichmentFailures` if some deep content couldn't be fetched.
 
 ### Meetings
 - `openproject_list_meetings`: List and filter meetings visible to the user by project (`projectId`) or time context (`time: "upcoming"` / `"past"`), with pagination (`offset`, `pageSize`).
 - `openproject_get_meeting`: Retrieve detailed meeting information by ID (`id: 2`), including structured agenda items, sections, notes, outcomes, and participants.
-- `openproject_search_meetings`: Deep search across meeting titles, locations, and agenda item notes by keyword (`query: "planning"`).
+- `openproject_search_meetings`: Ranked fuzzy search across meeting titles, locations, project and author names, agenda item titles and notes, outcomes, and participant names (`query: "planning"`, optional `projectId`, `matchMode`, `offset`, `pageSize`). Returns `score`, `matchedFields`, and matched agenda item excerpts, plus `degraded`/`enrichmentFailures` if some deep content couldn't be fetched.
 
 ### Wikis
 - `openproject_get_wiki_page`: Retrieve wiki page metadata, project, and attachments by numeric ID (`id: 1`).
-- `openproject_search_wiki_pages`: Discover and search wiki pages matching keywords or project with smart caching discovery (`query: "architecture"`, `projectId: "demo-project"`).
+- `openproject_search_wiki_pages`: Ranked fuzzy search across wiki page titles and page body text with smart caching discovery (`query: "architecture"`, `projectId: "demo-project"`, optional `matchMode`). Returns `score`, `matchedFields`, and a `snippet` per result.
 - `openproject_list_wiki_page_links`: List links connecting work packages to wiki pages (`workPackageId: 38`, `offset`, `pageSize`).
 
 ### Saved Queries & Views
@@ -393,6 +403,7 @@ Once connected in Claude Desktop, Cursor, or your agent of choice, you can ask q
 - *"What work packages are assigned to me, and what are their priorities?"*
 - *"Get details for work package #38 including its child tasks."*
 - *"Show all comments and discussion history on work package #38."*
+- *"Search work packages for anything about budget approval, even if it's misspelled."*
 - *"List upcoming meetings and show the agenda items for our weekly planning meeting."*
 - *"Search our meeting notes to see if anyone discussed the new architecture."*
 - *"Find wiki pages discussing 'architecture' or 'setup' and list their attachments."*
@@ -510,6 +521,7 @@ PORT=3000 bun run src/index.ts
 - **Phase 1 (Completed)**: Read-only browsing tools for projects, work packages, queries, taxonomies, and OpenAPI introspection.
 - **Phase 4 (Completed)**: Remote HTTP/SSE transport (`Bun.serve`) with multi-tenant per-session credential scoping and Docker Compose deployment.
 - **Phase 3 Extension (Completed)**: Read-only collaboration tools across Meetings, Wikis, and Work Package Activities (18 tools total).
+- **Phase 3.5 (Completed)**: Fuzzy search by default across all search tools with widened content coverage and a new `openproject_search_work_packages` tool (19 tools total). See [ADR-019](docs/DECISIONS.md).
 - **Phase 2 (Upcoming)**: Mutating operations (create/update work packages, add comments, log time).
 - **Phase 3 (Future)**: Binary attachment downloading and resource streaming.
 

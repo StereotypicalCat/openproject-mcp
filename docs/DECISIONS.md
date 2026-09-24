@@ -479,5 +479,74 @@ Furthermore, all new capabilities must strictly adhere to the project's read-onl
   - OpenProject API lack of a native wiki collection endpoint requires heuristic discovery probing.
   - Deep meeting search requires additional sub-requests for agenda items on candidate meetings, bounded by pagination limits.
 
+---
+
+## ADR-019: Fuzzy Search by Default with a Hand-Rolled Zero-Dependency Scorer
+
+### Status
+
+Accepted
+
+### Context
+
+Every search surface matched with case-insensitive exact substring containment.
+An LLM asking for "budget aproval", "approval of the budget", or "what did we
+decide about hiring" received zero results even when the information was
+present, and then reported to the user that it did not exist. Search also
+covered far less content than callers assumed: wiki search matched page titles
+only, and work package search matched subjects only.
+
+### Decision
+
+1. **Fuzzy matching is the default** across all search tools, with an
+   optional `matchMode: "fuzzy" | "exact"` parameter. Exact mode reproduces
+   the previous behaviour byte for byte, which lets the pre-existing test
+   suites serve as a regression harness.
+2. **A hand-rolled scorer in `src/search/`**, adding no runtime dependencies.
+   `fuse.js` was rejected because its Bitap implementation caps patterns at 32
+   characters and targets short fields in modest lists — the opposite of the
+   wiki-body and comment matching this change requires. Running two scoring
+   systems to cover both cases was worse than owning ~200 lines of pure,
+   synchronous, trivially testable code. `fastest-levenshtein` was rejected
+   because the distance function is roughly 30 lines with the early-exit band
+   we need, and fetching, not distance computation, dominates the time.
+3. **A bounded two-phase pipeline.** Phase 1 ranks on data already returned by
+   list endpoints; phase 2 enriches only the top 25 candidates at a
+   concurrency of 8. This replaces an unbounded `Promise.all` over up to 250
+   candidates in the previous meeting search.
+4. **Content coverage widened** to wiki page bodies, work package descriptions
+   and comments, and meeting participants and project names.
+5. **A new `openproject_search_work_packages` tool**, taking the registry from
+   18 to 19 tools. `searchWorkPackages` previously existed as a service helper
+   that no tool invoked, so ranked work package search would otherwise have been
+   unreachable. `openproject_list_work_packages` keeps its server-side
+   `subject ~` filter unchanged, keeping "filter" and "rank" as separate tools
+   rather than making one tool's response shape depend on its arguments.
+6. **No standalone activities search tool**, because OpenProject exposes
+   activities only per work package. Comment text enters the work package deep
+   phase instead. `openproject_list_work_package_activities` gained an optional
+   `query`/`matchMode` pair that ranks the activities it already fetched
+   client-side, at no extra API cost.
+
+### Consequences
+
+- LLM search hit rates improve substantially for paraphrased and misspelled
+  queries; results from all three search tools are ranked and carry `score`
+  and `matchedFields`. Work package and wiki page results additionally carry
+  a top-level `snippet`; meeting results carry a `snippet` per matched agenda
+  item instead.
+- Enrichment failures now surface as `degraded` / `enrichmentFailures` on the
+  meeting and work package search pages, rather than being silently
+  swallowed. Previously an expired token during a meeting search produced "no
+  results" instead of an auth error.
+- `src/search/` is pure and holds no module-level state, so it does not
+  reintroduce the cross-tenant cache exposure fixed in commit `7097d1c`.
+- Two accepted limitations: a record whose only match is deep content is
+  findable only within the 25-item enrichment window (see spec section 6.1),
+  and wiki search remains bounded by the ID 1..50 discovery probe (spec
+  section 6.2).
+- Scoring constants are tuning parameters. `tests/search/recall.test.ts` is
+  the acceptance test that governs them.
+
 
 
