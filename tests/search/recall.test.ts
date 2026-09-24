@@ -77,8 +77,15 @@ describe("Search recall", () => {
   });
 
   test("results are stable across repeated identical searches", () => {
-    const first = rankRecords(CORPUS, "budget", FIELDS).map((r) => r.record.id);
-    const second = rankRecords(CORPUS, "budget", FIELDS).map((r) => r.record.id);
+    // Uses "muller" deliberately: docs 1 and 5 share the identical person
+    // string, so both score exactly 0.33 and the ORDER is decided purely by
+    // the ascending-id tie-break. A single-result query (e.g. "budget") would
+    // pass this assertion even if the tie-break were removed entirely, since
+    // a one-element array cannot be reordered.
+    const first = rankRecords(CORPUS, "muller", FIELDS).map((r) => r.record.id);
+    const second = rankRecords(CORPUS, "muller", FIELDS).map((r) => r.record.id);
+    expect(first).toHaveLength(2);
+    expect(first).toEqual([1, 5]);
     expect(first).toEqual(second);
   });
 
