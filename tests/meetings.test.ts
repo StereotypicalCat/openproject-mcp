@@ -577,3 +577,149 @@ describe("Meetings Fuzzy Search", () => {
     );
   });
 });
+
+describe("Meetings Search Regressions", () => {
+  function meetingResource(
+    id: number,
+    title: string,
+    extra: Record<string, unknown> = {},
+    links: Record<string, unknown> = {}
+  ) {
+    return {
+      _type: "Meeting",
+      id,
+      title,
+      state: "open",
+      startTime: `2026-09-${String(id).padStart(2, "0")}T10:00:00Z`,
+      endTime: `2026-09-${String(id).padStart(2, "0")}T11:00:00Z`,
+      _links: { project: { href: "/api/v3/projects/1", title: "Demo" }, ...links },
+      ...extra,
+    };
+  }
+
+  function collectionClient(elements: unknown[]) {
+    return {
+      get: async (path: string) => {
+        if (path.startsWith("/api/v3/meetings?") || path === "/api/v3/meetings") {
+          return {
+            _type: "Collection",
+            total: elements.length,
+            count: elements.length,
+            pageSize: 100,
+            offset: 1,
+            _embedded: { elements },
+          };
+        }
+        if (path.includes("/agenda_items")) {
+          return { _type: "Collection", total: 0, _embedded: { elements: [] } };
+        }
+        const id = Number(path.match(/meetings\/(\d+)/)?.[1] ?? NaN);
+        return elements.find((e) => (e as { id: number }).id === id);
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  test("an author-only match is reported as an author match, not a project match", async () => {
+    const client = collectionClient([
+      meetingResource(
+        1,
+        "Weekly sync",
+        {},
+        { author: { href: "/api/v3/users/7", title: "Ingrid Kowalczyk" } }
+      ),
+      meetingResource(
+        2,
+        "Retrospective",
+        {},
+        { author: { href: "/api/v3/users/8", title: "Sam Okafor" } }
+      ),
+    ]);
+
+    const res = await searchMeetings({ query: "Kowalczyk" }, client);
+    expect(res.elements).toHaveLength(1);
+    expect(res.elements[0]!.meeting.id).toBe(1);
+    expect(res.elements[0]!.matchedFields).toContain("author");
+    // Before the fix this fell through resolveMatchType and reported
+    // "project", telling the model the meeting matched a project name.
+    expect(res.elements[0]!.matchType).toBe("author");
+  });
+
+  test("offset is a page number: page 2 does not overlap page 1", async () => {
+    const elements = Array.from({ length: 12 }, (_, i) =>
+      meetingResource(i + 1, `Arch Review ${i + 1}`)
+    );
+    const client = collectionClient(elements);
+
+    const whole = await searchMeetings(
+      { query: "Arch Review", offset: 1, pageSize: 100 },
+      client
+    );
+    const page1 = await searchMeetings({ query: "Arch Review", offset: 1, pageSize: 5 }, client);
+    const page2 = await searchMeetings({ query: "Arch Review", offset: 2, pageSize: 5 }, client);
+
+    const allIds = whole.elements.map((e) => e.meeting.id);
+    const ids1 = page1.elements.map((e) => e.meeting.id);
+    const ids2 = page2.elements.map((e) => e.meeting.id);
+
+    expect(allIds).toHaveLength(12);
+    expect(ids1).toEqual(allIds.slice(0, 5));
+    // The bug returned allIds.slice(1, 6) here — four of five items repeated.
+    expect(ids2).toEqual(allIds.slice(5, 10));
+    expect(ids1.filter((id) => ids2.includes(id))).toEqual([]);
+  });
+
+  test("does not ship the result array twice", async () => {
+    const client = collectionClient([meetingResource(1, "Arch Review")]);
+    const res = await searchMeetings({ query: "Arch Review" }, client);
+    expect(res.elements).toHaveLength(1);
+    expect(Object.keys(res)).not.toContain("items");
+    expect(JSON.parse(JSON.stringify(res))).not.toHaveProperty("items");
+  });
+});
+
+describe("getMeeting error propagation", () => {
+  function clientFailingAgendaWith(error: unknown) {
+    return {
+      get: async (path: string) => {
+        if (path.includes("/agenda_items")) {
+          throw error;
+        }
+        return {
+          _type: "Meeting",
+          id: 5,
+          title: "Weekly sync",
+          state: "open",
+          startTime: "2026-09-05T10:00:00Z",
+          endTime: "2026-09-05T11:00:00Z",
+          _links: { project: { href: "/api/v3/projects/1", title: "Demo" } },
+        };
+      },
+    } as unknown as OpenProjectClient;
+  }
+
+  test("propagates an authentication failure from the agenda fetch", async () => {
+    await expect(
+      getMeeting(5, { includeAgendaItems: true }, clientFailingAgendaWith(
+        new OpenProjectAuthenticationError()
+      ))
+    ).rejects.toThrow(OpenProjectAuthenticationError);
+  });
+
+  test("propagates a rate limit from the agenda fetch", async () => {
+    await expect(
+      getMeeting(5, { includeAgendaItems: true }, clientFailingAgendaWith(
+        new OpenProjectError("rate limited", { statusCode: 429 })
+      ))
+    ).rejects.toThrow("rate limited");
+  });
+
+  test("still degrades to an empty agenda on a non-fatal failure", async () => {
+    const detail = await getMeeting(
+      5,
+      { includeAgendaItems: true },
+      clientFailingAgendaWith(new OpenProjectError("boom", { statusCode: 500 }))
+    );
+    expect(detail.id).toBe(5);
+    expect(detail.agendaItems).toEqual([]);
+  });
+});

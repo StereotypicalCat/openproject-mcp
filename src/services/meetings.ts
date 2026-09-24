@@ -7,7 +7,7 @@ import type { OpenProjectClient } from "../client/api-client.ts";
 import { extractIdFromHref, extractRawText } from "../client/hal-parser.ts";
 import type { HalCollection, HalResource } from "../client/types.ts";
 import { resolveClient, resolveProjectId } from "./helper.ts";
-import { searchPipeline } from "../search/pipeline.ts";
+import { isFatalSearchError, searchPipeline } from "../search/pipeline.ts";
 import { rankRecords } from "../search/rank.ts";
 import type { FieldSpec, MatchMode } from "../search/rank.ts";
 
@@ -51,7 +51,7 @@ export interface MeetingDetail extends MeetingSummary {
 
 export interface MeetingSearchResult {
   meeting: MeetingSummary;
-  matchType: "title" | "location" | "agenda_item" | "participant" | "project";
+  matchType: "title" | "location" | "agenda_item" | "participant" | "author" | "project";
   matchedAgendaItems?: Array<{
     id: number;
     title: string;
@@ -72,7 +72,14 @@ export interface PaginatedResult<T> {
   items?: T[];
 }
 
-export interface MeetingSearchPage extends PaginatedResult<MeetingSearchResult> {
+/**
+ * Search results are exposed under `elements` only. `items` is deliberately
+ * omitted: the tool layer JSON-stringifies this whole object, so carrying the
+ * same array twice doubles the token cost of every search response.
+ */
+export interface MeetingSearchPage
+  extends Omit<PaginatedResult<MeetingSearchResult>, "items"> {
+  elements: MeetingSearchResult[];
   /** True when some deep content could not be read. */
   degraded: boolean;
   enrichmentFailures: number;
@@ -348,7 +355,15 @@ export async function getMeeting(
       meetingPromise,
       opClient
         .get<HalCollection<Record<string, unknown>>>(`/api/v3/meetings/${id}/agenda_items`)
-        .catch(() => undefined),
+        .catch((error: unknown) => {
+          // An expired token or a rate limit must not be reported to the
+          // model as "this meeting has no agenda items". Degrade only on
+          // errors that genuinely mean "agenda unavailable" (404, 500, ...).
+          if (isFatalSearchError(error)) {
+            throw error;
+          }
+          return undefined;
+        }),
     ]);
 
     let agendaItems: AgendaItem[] | undefined;
@@ -410,6 +425,11 @@ function resolveMatchType(matchedFields: string[]): MeetingSearchResult["matchTy
     return "agenda_item";
   }
   if (matchedFields.includes("participant")) return "participant";
+  // `author` sits below `participant` and above the `project` fallback: both
+  // are person matches, and author carries the lower field weight. Without
+  // this branch an author-only hit falls through and is reported to the model
+  // as a project-name match.
+  if (matchedFields.includes("author")) return "author";
   return "project";
 }
 
@@ -533,9 +553,11 @@ export async function searchMeetings(
     };
   });
 
+  // `offset` is a 1-based PAGE number, as the tool schema documents and as the
+  // rest of this codebase and the OpenProject API treat it — not an item index.
   const offset = params.offset ?? 1;
   const pageSize = params.pageSize ?? 20;
-  const startIndex = Math.max(0, offset - 1);
+  const startIndex = Math.max(0, offset - 1) * pageSize;
   const paged = all.slice(startIndex, startIndex + pageSize);
 
   return {
@@ -544,7 +566,6 @@ export async function searchMeetings(
     pageSize,
     offset,
     elements: paged,
-    items: paged,
     degraded: result.degraded,
     enrichmentFailures: result.enrichmentFailures,
   };
