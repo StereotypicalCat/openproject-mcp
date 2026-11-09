@@ -1,5 +1,5 @@
 # Stage 1: Dependency resolution and production prune
-FROM oven/bun:1-slim AS builder
+FROM oven/bun:1.4.4-slim AS builder
 WORKDIR /app
 
 # Copy dependency manifests
@@ -9,7 +9,7 @@ COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
 # Stage 2: Minimal runtime image
-FROM oven/bun:1-slim AS runner
+FROM oven/bun:1.4.4-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

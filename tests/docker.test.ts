@@ -10,8 +10,8 @@ describe("Docker Container Packaging", () => {
     expect(existsSync(dockerfilePath)).toBe(true);
 
     const content = readFileSync(dockerfilePath, "utf-8");
-    expect(content).toContain("FROM oven/bun:1-slim AS builder");
-    expect(content).toContain("FROM oven/bun:1-slim AS runner");
+    expect(content).toContain("FROM oven/bun:1.4.4-slim AS builder");
+    expect(content).toContain("FROM oven/bun:1.4.4-slim AS runner");
     expect(content).toContain("bun install --frozen-lockfile --production");
     expect(content).toContain("USER bun");
     expect(content).toContain('ENTRYPOINT ["bun", "run", "src/index.ts"]');
