@@ -14,7 +14,9 @@ env:
 jobs:
   test:
     name: Test & Lint
-    runs-on: ubuntu-latest
+    # st_small: the homelab's small runner, for light jobs. See docs/ci-gitea.md
+    # in the config repository.
+    runs-on: st_small
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
